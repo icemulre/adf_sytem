@@ -205,6 +205,13 @@ class Database {
     }
 
     /**
+     * Check if in transaction
+     */
+    public function inTransaction() {
+        return $this->connection->inTransaction();
+    }
+
+    /**
      * Commit Transaction
      */
     public function commit() {
