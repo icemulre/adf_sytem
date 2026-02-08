@@ -360,6 +360,12 @@ require_once __DIR__ . '/includes/header.php';
     
     <?php else: ?>
     <!-- Users List -->
+    <?php if (!$businessConfig): ?>
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Business not found. <a href="business-users.php">Go back</a>
+    </div>
+    <?php else: ?>
     <div class="row mb-3">
         <div class="col-12">
             <nav aria-label="breadcrumb">
@@ -511,7 +517,8 @@ require_once __DIR__ . '/includes/header.php';
             </table>
         </div>
     </div>
-    <?php endif; ?>
+    <?php endif; // if $businessConfig ?>
+    <?php endif; // else (Users List) ?>
 </div>
 
 <script>
