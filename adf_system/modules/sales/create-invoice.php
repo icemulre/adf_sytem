@@ -233,23 +233,23 @@ include '../../includes/header.php';
 
 <style>
 .invoice-container {
-    max-width: 1100px;
+    max-width: 960px;
     margin: 0 auto;
 }
 
 .invoice-header {
     background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05));
-    padding: 1.75rem;
-    border-radius: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-radius: 0.875rem;
     border: 1px solid rgba(99, 102, 241, 0.1);
-    margin-bottom: 1.75rem;
+    margin-bottom: 1.25rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
 }
 
 .invoice-header h1 {
-    font-size: 1.75rem;
+    font-size: 1.5rem;
     font-weight: 800;
     color: var(--text-primary);
     margin: 0;
@@ -261,43 +261,68 @@ include '../../includes/header.php';
 .section {
     background: var(--bg-secondary);
     border: 1px solid var(--bg-tertiary);
-    border-radius: 0.875rem;
-    padding: 1.5rem;
-    margin-bottom: 1.25rem;
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
 }
 
 .section-title {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 700;
     color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 1rem;
-    padding-bottom: 0.75rem;
+    margin-bottom: 0.875rem;
+    padding-bottom: 0.6rem;
     border-bottom: 2px solid var(--primary-color);
 }
 
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.875rem; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.875rem; }
 
 .form-group { margin-bottom: 0; }
 .form-label { 
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.35rem;
     display: block;
 }
 
 .form-control {
     background: var(--bg-primary);
     border: 1.5px solid var(--bg-tertiary);
-    border-radius: 0.6rem;
-    padding: 0.7rem 0.85rem;
-    font-size: 0.9rem;
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.875rem;
     transition: all 0.2s ease;
+}
+
+/* Input Group for Percentages */
+.input-group {
+    display: flex;
+    align-items: stretch;
+}
+.input-group .form-control {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    flex: 1;
+}
+.input-group-text {
+    background: var(--bg-tertiary);
+    border: 1.5px solid var(--bg-tertiary);
+    border-left: none;
+    padding: 0 0.875rem;
+    display: flex;
+    align-items: center;
+    border-top-right-radius: 0.5rem;
+    border-bottom-right-radius: 0.5rem;
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 0.875rem;
+}
 }
 
 .form-control:focus {
@@ -566,13 +591,21 @@ include '../../includes/header.php';
         <div id="totalSummary">
             <div class="grid-3" style="margin-bottom: 1.5rem;">
                 <div class="form-group">
-                    <label class="form-label">💰 Diskon (Rp)</label>
-                    <input type="text" name="discount_amount" id="discount_amount" class="form-control input-small" value="0" onkeyup="calculateTotal()" placeholder="0">
+                    <label class="form-label">💰 Diskon (%)</label>
+                    <div class="input-group">
+                        <input type="number" name="discount_percent" id="discount_percent" class="form-control input-small" value="0" min="0" max="100" step="0.01" onkeyup="calculateTotal()" onchange="calculateTotal()" placeholder="0">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <input type="hidden" name="discount_amount" id="discount_amount" value="0">
                 </div>
                 
                 <div class="form-group">
-                    <label class="form-label">🏦 Pajak (Rp)</label>
-                    <input type="text" name="tax_amount" id="tax_amount" class="form-control input-small" value="0" onkeyup="calculateTotal()" placeholder="0">
+                    <label class="form-label">🏦 PPN (%)</label>
+                    <div class="input-group">
+                        <input type="number" name="tax_percent" id="tax_percent" class="form-control input-small" value="0" min="0" max="100" step="0.01" onkeyup="calculateTotal()" onchange="calculateTotal()" placeholder="0">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <input type="hidden" name="tax_amount" id="tax_amount" value="0">
                 </div>
                 
                 <div class="form-group">
@@ -714,11 +747,32 @@ function calculateTotal() {
         subtotal += total;
     }
     
-    const discount = parseFloat(document.getElementById('discount_amount').value.replace(/[^0-9.-]+/g, '')) || 0;
-    const tax = parseFloat(document.getElementById('tax_amount').value.replace(/[^0-9.-]+/g, '')) || 0;
-    const grandTotal = subtotal - discount + tax;
+    // Calculate based on Percentages
+    const discountPercent = parseFloat(document.getElementById('discount_percent').value) || 0;
+    const taxPercent = parseFloat(document.getElementById('tax_percent').value) || 0;
+    
+    // Discount Amount = Subtotal * (Discount% / 100)
+    const discountAmount = Math.round(subtotal * (discountPercent / 100));
+    
+    // Tax Base = Subtotal - Discount
+    const taxBase = subtotal - discountAmount;
+    // Tax Amount = TaxBase * (Tax% / 100)
+    const taxAmount = Math.round(taxBase * (taxPercent / 100));
+    
+    // Update Hidden Inputs for Server
+    document.getElementById('discount_amount').value = discountAmount;
+    document.getElementById('tax_amount').value = taxAmount;
+
+    const grandTotal = subtotal - discountAmount + taxAmount;
     
     document.getElementById('subtotal_display').textContent = 'Rp ' + subtotal.toLocaleString('id-ID');
+    // Display shows amount and percentage for clarity if needed, or just amount as per UI elements
+    if(document.getElementById('discount_display')) {
+         document.getElementById('discount_display').textContent = '- Rp ' + discountAmount.toLocaleString('id-ID');
+    }
+    if(document.getElementById('tax_display')) {
+         document.getElementById('tax_display').textContent = '+ Rp ' + taxAmount.toLocaleString('id-ID');
+    }
     document.getElementById('total_display').textContent = 'Rp ' + grandTotal.toLocaleString('id-ID');
 }
 

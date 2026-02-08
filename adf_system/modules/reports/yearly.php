@@ -10,6 +10,13 @@ $auth->requireLogin();
 
 $db = Database::getInstance();
 $currentUser = $auth->getCurrentUser();
+
+// Get Total Real Cash (All Time)
+$allTimeCashResult = $db->fetchOne(
+    "SELECT SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE -amount END) as balance FROM cash_book"
+);
+$totalRealCash = $allTimeCashResult['balance'] ?? 0;
+
 $pageTitle = 'Laporan Tahunan';
 
 // Get filter parameters
@@ -125,7 +132,7 @@ include '../../includes/header.php';
     </div>
 
 <!-- Summary Cards -->
-<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
     <div class="card" style="padding: 1.25rem; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));">
         <div style="display: flex; align-items: center; gap: 0.875rem;">
             <div style="width: 48px; height: 48px; border-radius: var(--radius-lg); background: var(--success); display: flex; align-items: center; justify-content: center;">
@@ -163,6 +170,21 @@ include '../../includes/header.php';
                 <div style="font-size: 0.813rem; color: var(--text-muted); margin-bottom: 0.25rem;">Saldo Bersih</div>
                 <div style="font-size: 1.375rem; font-weight: 700; color: <?php echo $grandNet >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;">
                     Rp <?php echo number_format($grandNet, 0, ',', '.'); ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Uang Cash (Real Money) -->
+    <div class="card" style="padding: 1.25rem; background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(6, 182, 212, 0.05));">
+        <div style="display: flex; align-items: center; gap: 0.875rem;">
+            <div style="width: 48px; height: 48px; border-radius: var(--radius-lg); background: #06b6d4; display: flex; align-items: center; justify-content: center;">
+                <i data-feather="dollar-sign" style="width: 24px; height: 24px; color: white;"></i>
+            </div>
+            <div style="flex: 1;">
+                <div style="font-size: 0.813rem; color: #0891b2; margin-bottom: 0.25rem;">Total Uang Cash</div>
+                <div style="font-size: 1.375rem; font-weight: 700; color: #0891b2;">
+                    Rp <?php echo number_format($totalRealCash, 0, ',', '.'); ?>
                 </div>
             </div>
         </div>

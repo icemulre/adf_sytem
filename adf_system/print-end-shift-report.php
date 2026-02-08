@@ -17,9 +17,19 @@ if (!isset($_SESSION['user_id'])) {
 // Resolve business info (prefer selected_business_id, fallback to active business config)
 $selectedBusinessId = $_SESSION['selected_business_id'] ?? null;
 $business = null;
+$operatorName = $_SESSION['username'] ?? 'Unknown';
+
+// Get Master DB for user fetch
+$masterDb = Database::getInstance();
+
+if (isset($_SESSION['user_id'])) {
+    $user = $masterDb->fetchOne("SELECT full_name FROM users WHERE id = ?", [$_SESSION['user_id']]);
+    if ($user && !empty($user['full_name'])) {
+        $operatorName = $user['full_name'];
+    }
+}
 
 if ($selectedBusinessId) {
-    $masterDb = Database::getInstance();
     $businessQuery = "SELECT * FROM businesses WHERE id = ?";
     $business = $masterDb->fetchOne($businessQuery, [$selectedBusinessId]);
 }
@@ -116,52 +126,53 @@ function formatRupiah($amount) {
         
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            padding: 20px;
+            padding: 15px;
             background: white;
+            font-size: 12px;
         }
         
         .report-container {
-            max-width: 900px;
+            max-width: 700px;
             margin: 0 auto;
         }
         
         .header {
             text-align: center;
-            border-bottom: 3px solid #333;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
         }
         
         .header h1 {
-            font-size: 28px;
+            font-size: 20px;
             color: #333;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
         }
         
         .header h2 {
-            font-size: 20px;
+            font-size: 16px;
             color: #666;
             font-weight: normal;
             margin-bottom: 5px;
         }
         
         .header p {
-            font-size: 14px;
+            font-size: 12px;
             color: #888;
         }
         
         .info-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 30px;
+            gap: 15px;
+            margin-bottom: 20px;
         }
         
         .info-box {
-            padding: 15px;
+            padding: 10px;
             background: #f8f9fa;
-            border-radius: 8px;
-            border-left: 4px solid #4CAF50;
+            border-radius: 6px;
+            border-left: 3px solid #4CAF50;
         }
         
         .info-box.expense {
@@ -177,35 +188,35 @@ function formatRupiah($amount) {
         }
         
         .info-box h3 {
-            font-size: 14px;
+            font-size: 11px;
             color: #666;
-            margin-bottom: 8px;
+            margin-bottom: 5px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         
         .info-box .amount {
-            font-size: 24px;
+            font-size: 18px;
             font-weight: bold;
             color: #333;
         }
         
         .section {
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
         
         .section h2 {
-            font-size: 18px;
+            font-size: 14px;
             color: #333;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #eee;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #eee;
         }
         
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
         
         table thead {
@@ -214,9 +225,9 @@ function formatRupiah($amount) {
         }
         
         table th {
-            padding: 12px 10px;
+            padding: 8px 8px;
             text-align: left;
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 600;
         }
         
@@ -225,8 +236,8 @@ function formatRupiah($amount) {
         }
         
         table td {
-            padding: 10px;
-            font-size: 13px;
+            padding: 6px 8px;
+            font-size: 11px;
             border-bottom: 1px solid #eee;
         }
         
@@ -339,7 +350,7 @@ function formatRupiah($amount) {
             <h1><?php echo htmlspecialchars($business['business_name']); ?></h1>
             <h2>LAPORAN AKHIR SHIFT (END SHIFT)</h2>
             <p><strong>Tanggal:</strong> <?php echo $todayDisplay; ?> | <strong>Waktu Cetak:</strong> <?php echo date('H:i:s'); ?></p>
-            <p><strong>Operator:</strong> <?php echo htmlspecialchars($_SESSION['username']); ?></p>
+            <p><strong>Operator:</strong> <?php echo htmlspecialchars($operatorName); ?></p>
         </div>
         
         <!-- Summary Boxes -->

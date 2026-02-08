@@ -125,7 +125,7 @@ include '../../includes/header.php';
 }
 
 /* Scroll Container - MUST BE CONSTRAINED */
-.calendar-scroll-container {
+.calendar-scroll-wrapper {
     width: 100%;
     overflow-x: auto;
     overflow-y: hidden;
@@ -133,13 +133,28 @@ include '../../includes/header.php';
     box-sizing: border-box;
     display: block;
     white-space: nowrap;
-    cursor: grab;
+    cursor: grab !important;
     background: transparent;
-    touch-action: pan-x;
+    user-select: none;
+    -webkit-user-select: none;
+    padding-bottom: 5px; /* Space for scrollbar */
 }
 
-.calendar-scroll-container:active {
-    cursor: grabbing;
+.calendar-scroll-wrapper::-webkit-scrollbar {
+    height: 8px;
+}
+
+.calendar-scroll-wrapper::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.3);
+    border-radius: 4px;
+}
+
+.calendar-scroll-wrapper:active {
+    cursor: grabbing !important;
+}
+
+.calendar-scroll-wrapper.dragging {
+    cursor: grabbing !important;
 }
 
 .calendar-header {
@@ -271,7 +286,7 @@ include '../../includes/header.php';
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
-    cursor: grab;
+    cursor: grab !important;
     width: fit-content;
     min-width: 100%;
     display: inline-block;
@@ -282,7 +297,7 @@ include '../../includes/header.php';
 }
 
 .calendar-wrapper.dragging {
-    cursor: grabbing;
+    cursor: grabbing !important;
 }
 
 .calendar-wrapper.dragging,
@@ -292,7 +307,7 @@ include '../../includes/header.php';
 
 body.calendar-dragging {
     user-select: none;
-    cursor: grabbing;
+    cursor: grabbing !important;
 }
 
 /* Light Theme - Make borders more visible */
@@ -362,18 +377,19 @@ body[data-theme="light"] .grid-room-type-header {
 }
 
 .grid-header-room {
-    background: var(--bg-secondary);
+    background: #e2e8f0; /* Match sidebar */
+    border-right: 2px solid #94a3b8;
     backdrop-filter: none;
-    border: 0.5px solid var(--border-color);
+    border-bottom: 0.5px solid var(--border-color);
     padding: 0.15rem 0.1rem;
     font-weight: 900;
     text-align: center;
     position: sticky;
     left: 0;
-    z-index: 20;
+    z-index: 40;
     font-size: 0.6rem;
     color: var(--text-primary);
-    box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
     letter-spacing: 0.2px;
     display: flex;
     align-items: center;
@@ -383,9 +399,10 @@ body[data-theme="light"] .grid-room-type-header {
 
 /* Light theme - better header visibility */
 body[data-theme="light"] .grid-header-room {
-    background: rgba(99, 102, 241, 0.1);
+    background: #cbd5e1;
     font-weight: 900;
-    border: 1px solid rgba(51, 65, 85, 0.2);
+    border: 1px solid #94a3b8;
+    color: #0f172a;
 }
 
 .grid-header-date {
@@ -464,16 +481,15 @@ body[data-theme="light"] .grid-date-cell.today {
 
 /* Room Row */
 .grid-room-label {
-    background: var(--bg-secondary);
-    backdrop-filter: none;
-    border-right: 0.5px solid var(--border-color);
-    border-bottom: 0.5px solid var(--border-color);
+    background: #f1f5f9; /* Solid background for sidebar effect */
+    border-right: 2px solid #cbd5e1; /* Stronger border */
+    border-bottom: 1px solid #cbd5e1;
     padding: 0.1rem 0.15rem;
     font-weight: 800;
     color: var(--text-primary);
     position: sticky;
     left: 0;
-    z-index: 15;
+    z-index: 30;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -482,45 +498,46 @@ body[data-theme="light"] .grid-date-cell.today {
     cursor: grab;
     font-size: 0.6rem;
     min-height: 22px;
-    box-shadow: 1px 0 4px rgba(0, 0, 0, 0.1);
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1); /* Shadow to separate sidebar */
     white-space: normal;
     word-break: break-word;
 }
 
 /* Light theme - better room label contrast */
 body[data-theme="light"] .grid-room-label {
-    background: rgba(248, 250, 252, 0.98);
+    background: #e2e8f0; /* Darker slate for better contrast in light mode */
+    color: #1e293b;
     font-weight: 900;
-    border-right: 1px solid rgba(51, 65, 85, 0.15);
-    border-bottom: 1px solid rgba(51, 65, 85, 0.15);
+    border-right: 2px solid #94a3b8;
+    border-bottom: 1px solid #cbd5e1;
 }
 
 .grid-room-type-header {
-    background: var(--bg-secondary);
-    backdrop-filter: none;
-    border-right: 0.5px solid var(--border-color);
-    border-bottom: 0.5px solid var(--border-color);
+    background: #f1f5f9;
+    border-right: 2px solid #cbd5e1;
+    border-bottom: 1px solid #cbd5e1;
     padding: 0.25rem 0.3rem;
     font-weight: 800;
     color: var(--text-primary);
     position: sticky;
     left: 0;
-    z-index: 15;
+    z-index: 30;
     display: flex;
     align-items: center;
     justify-content: flex-start;
     font-size: 0.9rem;
     gap: 0.25rem;
-    min-height: 18px;
-    box-shadow: 1px 0 4px rgba(0, 0, 0, 0.1);
+    min-height: 25px; /* Slight increase for better spacing */
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
 }
 
 /* Light theme - better type header visibility */
 body[data-theme="light"] .grid-room-type-header {
-    background: rgba(99, 102, 241, 0.08);
+    background: #e2e8f0;
+    color: #1e293b;
     font-weight: 900;
-    border-right: 1px solid rgba(51, 65, 85, 0.15);
-    border-bottom: 1px solid rgba(51, 65, 85, 0.15);
+    border-right: 2px solid #94a3b8;
+    border-bottom: 1px solid #cbd5e1;
 }
 
 /* Ensure booking bar text stays white in light theme */
@@ -1431,10 +1448,13 @@ body[data-theme="light"] .btn-secondary {
         <span class="date-display">
             <?php echo date('M d', strtotime($startDate)); ?> - <?php echo date('M d, Y', strtotime($startDate . ' +29 days')); ?>
         </span>
+        <button class="nav-btn" id="newReservationBtn" type="button" onclick="openNewReservationForm()" style="background: linear-gradient(135deg, #10b981, #34d399); margin-left: auto;">
+            ➕ New Reservation
+        </button>
     </div>
 
     <!-- Calendar Grid - WRAPPED IN SCROLL CONTAINER -->
-    <div class="calendar-scroll-container">
+    <div class="calendar-scroll-wrapper" id="drag-container" style="overflow-x: auto; cursor: grab; user-select: none;">
         <div class="calendar-wrapper">
             <div class="calendar-grid">
             <!-- Header Row -->
@@ -1505,7 +1525,8 @@ body[data-theme="light"] .btn-secondary {
                      data-date="<?php echo $date; ?>"
                      data-room-number="<?php echo htmlspecialchars($room['room_number']); ?>"
                      data-room-id="<?php echo $room['id']; ?>"
-                     title="<?php echo htmlspecialchars($room['room_number']); ?> - <?php echo date('d M Y', strtotime($date)); ?><?php echo $hasTurnover ? ' (Turnover: CO + CI)' : ''; ?>">
+                     title="<?php echo htmlspecialchars($room['room_number']); ?> - <?php echo date('d M Y', strtotime($date)); ?><?php echo $hasTurnover ? ' (Turnover: CO + CI)' : ''; ?>"
+                     onclick="openCellReservation(this)">
                     <?php
                     // Find bookings for this room and date - CLOUDBED STYLE (bar from noon to noon)
                     if (isset($bookingMatrix[$room['id']])) {
@@ -2154,6 +2175,145 @@ window.changeDate = function changeDate() {
     window.location.search = '?start=' + dateInput.value;
 }
 
+window.openNewReservationForm = function openNewReservationForm() {
+    // Open reservation form from reservasi.php
+    window.location.href = '<?php echo BASE_URL; ?>/modules/frontdesk/reservasi.php?action=new';
+}
+
+window.openCellReservation = function openCellReservation(element) {
+    const date = element.getAttribute('data-date');
+    const roomId = element.getAttribute('data-room-id');
+    
+    // Populate Modal
+    const modal = document.getElementById('reservationModal');
+    const checkInInput = document.getElementById('checkInDate');
+    const checkOutInput = document.getElementById('checkOutDate');
+    const roomSelect = document.getElementById('roomSelect');
+    
+    if (checkInInput) checkInInput.value = date;
+    
+    // Calculate next day for checkout default
+    if (checkInInput && checkOutInput) {
+        const nextDay = new Date(date);
+        nextDay.setDate(nextDay.getDate() + 1);
+        checkOutInput.value = nextDay.toISOString().split('T')[0];
+    }
+    
+    if (roomSelect) {
+        roomSelect.value = roomId;
+        updateRoomPrice(); 
+        updateStayDetails();
+    }
+    
+    // Show Modal
+    if(modal) {
+        modal.classList.add('active');
+    }
+}
+
+window.closeReservationModal = function() {
+    const modal = document.getElementById('reservationModal');
+    if(modal) modal.classList.remove('active');
+}
+
+window.updateRoomPrice = function() {
+    const select = document.getElementById('roomSelect');
+    const priceInput = document.getElementById('roomPrice');
+    if(select && priceInput) {
+        const option = select.options[select.selectedIndex];
+        if(option) {
+            priceInput.value = option.getAttribute('data-price') || 0;
+            calculateFinalPrice();
+        }
+    }
+}
+
+window.updateStayDetails = function() {
+    const checkInEl = document.getElementById('checkInDate');
+    const checkOutEl = document.getElementById('checkOutDate');
+    if(!checkInEl || !checkOutEl) return;
+    
+    const checkIn = new Date(checkInEl.value);
+    const checkOut = new Date(checkOutEl.value);
+    
+    if (checkIn && checkOut && checkOut > checkIn) {
+        const diffTime = Math.abs(checkOut - checkIn);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        document.getElementById('totalNights').value = diffDays;
+        
+        const display = document.getElementById('displayNights');
+        if(display) display.innerText = diffDays;
+        
+        calculateFinalPrice();
+    } else {
+        document.getElementById('totalNights').value = 0;
+        const display = document.getElementById('displayNights');
+        if(display) display.innerText = 0;
+    }
+}
+
+window.calculateFinalPrice = function() {
+    const nightsEl = document.getElementById('totalNights');
+    const priceEl = document.getElementById('roomPrice');
+    const discountEl = document.getElementById('discount');
+    
+    const nights = parseInt(nightsEl ? nightsEl.value : 0) || 0;
+    const price = parseFloat(priceEl ? priceEl.value : 0) || 0;
+    const discount = parseFloat(discountEl ? discountEl.value : 0) || 0;
+    
+    const total = (nights * price) - discount;
+    const final = total > 0 ? total : 0;
+    
+    const finalEl = document.getElementById('finalPriceDisplay');
+    if(finalEl) finalEl.innerText = 'Rp ' + final.toLocaleString('id-ID');
+    
+    const hiddenEl = document.getElementById('hiddenFinalPrice');
+    if(hiddenEl) hiddenEl.value = final;
+}
+
+window.setPaymentMethod = function(method, btn) {
+    document.getElementById('paymentMethod').value = method;
+    document.querySelectorAll('#reservationModal .payment-method-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+
+window.submitReservation = function(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    // ensure final price is up to date before submitting
+    calculateFinalPrice();
+    
+    const formData = new FormData(form);
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerText;
+    
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Saving...';
+    
+    fetch('<?php echo BASE_URL; ?>/api/create-reservation.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.success || data.status === 'success') {
+            closeReservationModal();
+            location.reload(); 
+        } else {
+            alert('Error: ' + (data.message || 'Unknown error'));
+            submitBtn.disabled = false;
+            submitBtn.innerText = originalText;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to connect to server.');
+        submitBtn.disabled = false;
+        submitBtn.innerText = originalText;
+    });
+}
+
 const shiftCalendarDays = (days) => {
     const dateInput = document.getElementById('dateInput');
     if (!dateInput) return;
@@ -2174,9 +2334,10 @@ window.nextMonth = function nextMonth() {
 // COMMENTED OUT - Reservation Form Code
 // Will rebuild from scratch
 // ========================================
-/*
+
 // Store form pre-fill data
 let formPreFillData = {
+
     date: null,
     roomId: null
 };
@@ -2435,320 +2596,316 @@ window.calculateTotalPax = function calculateTotalPax() {
     document.getElementById('totalPax').value = totalPax;
 }
 
-window.submitReservation = function submitReservation(event) {
-    event.preventDefault();
-    
-    const formData = new FormData(document.getElementById('reservationForm'));
-    
-    // Add calculated values
-    const roomPrice = parseFloat(document.getElementById('roomPrice').value) || 0;
-    const nights = parseInt(document.getElementById('totalNights').value) || 0;
-    const discount = parseFloat(document.getElementById('discount').value) || 0;
-    
-    formData.append('total_price', roomPrice * nights);
-    formData.append('final_price', (roomPrice * nights) - discount);
-    formData.append('action', 'create_reservation');
-    
-    // Show loading
-    const submitBtn = event.target.querySelector('button[type="submit"]');
-    const originalText = submitBtn.innerHTML;
-    submitBtn.innerHTML = 'Saving...';
-    submitBtn.disabled = true;
-    
-    // Submit via AJAX
-    fetch('<?php echo BASE_URL; ?>/api/create-reservation.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            return response.text().then(text => {
-                throw new Error(text || 'Server returned non-JSON response');
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            alert('Reservation created successfully!\nBooking Code: ' + data.booking_code);
-            closeReservationModal();
-            location.reload(); // Reload to show new booking
-        } else {
-            alert('Error: ' + (data.message || 'Failed to create reservation'));
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error: ' + (error.message || 'Connection error. Please try again.'));
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
-    });
-}
-
+// Old submitReservation removed to avoid duplication and syntax error
+// The new submitReservation is defined earlier in the file
 
 // Setup form event listeners (removed click-outside-to-close functionality)
 document.addEventListener('DOMContentLoaded', function() {
-    
-    // Form event listeners
-    const checkInDate = document.getElementById('checkInDate');
-    const checkOutDate = document.getElementById('checkOutDate');
-    const roomSelect = document.getElementById('roomSelect');
-    const roomPriceInput = document.getElementById('roomPrice');
-    const discountInput = document.getElementById('discount');
-    const adultInput = document.getElementById('adultCount');
-    const childrenInput = document.getElementById('childrenCount');
-    const paidAmountInput = document.getElementById('paidAmount');
-    const paymentMethodInput = document.getElementById('paymentMethod');
-    
-    if (checkInDate) checkInDate.addEventListener('change', calculateNights);
-    if (checkOutDate) checkOutDate.addEventListener('change', calculateNights);
-    if (roomPriceInput) roomPriceInput.addEventListener('input', calculatePrice);
-    if (discountInput) discountInput.addEventListener('input', calculatePrice);
-    if (adultInput) adultInput.addEventListener('change', calculateTotalPax);
-    if (childrenInput) childrenInput.addEventListener('change', calculateTotalPax);
-    if (paidAmountInput) {
-        paidAmountInput.addEventListener('input', function() {
-            const dpButtons = document.querySelectorAll('.dp-percent-btn');
-            dpButtons.forEach(btn => btn.classList.remove('active'));
-            delete paidAmountInput.dataset.dpPercent;
-            updatePaymentStatusFromAmount();
-        });
+    console.log('🚀 DOMContentLoaded fired for calendar.php');
+
+    try {
+        // ========================================
+        // 1. DRAG SCROLL IMPLEMENTATION (PRIORITY)
+        // ========================================
+        const scroller = document.getElementById('drag-container') || document.querySelector('.calendar-scroll-wrapper');
+        
+        if (!scroller) {
+            console.error('❌ Drag container not found');
+        } else {
+            console.log('✅ Drag initialized on #drag-container');
+            
+            let isDown = false;
+            let startX;
+            let scrollLeft;
+
+            scroller.addEventListener('mousedown', (e) => {
+                // Ignore if clicking on interactive elements
+                if (e.target.closest('.booking-bar') || 
+                    e.target.closest('.nav-btn') || 
+                    e.target.closest('input') || 
+                    e.target.closest('button')) return;
+                
+                isDown = true;
+                scroller.classList.add('dragging');
+                startX = e.pageX - scroller.offsetLeft;
+                scrollLeft = scroller.scrollLeft;
+                
+                console.log('MouseDown: StartX', startX, 'ScrollLeft', scrollLeft);
+            });
+
+            // Use window for mousemove/mouseup to handle drags that leave the container
+            window.addEventListener('mouseleave', () => {
+                isDown = false;
+                if(scroller) scroller.classList.remove('dragging');
+            });
+
+            window.addEventListener('mouseup', () => {
+                isDown = false;
+                if(scroller) scroller.classList.remove('dragging');
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDown) return;
+                e.preventDefault(); // Prevent selection/dragging artifacts
+                
+                const x = e.pageX - scroller.offsetLeft;
+                const walk = (x - startX); // Scroll 1:1
+                scroller.scrollLeft = scrollLeft - walk;
+                
+                // console.log('MouseMove:', { x, walk, newScroll: scroller.scrollLeft }); // Uncomment for debug
+            });
+
+            // Touch support
+            scroller.addEventListener('touchstart', (e) => {
+                if (e.target.closest('.booking-bar')) return;
+                const touch = e.touches[0];
+                isDown = true;
+                startX = touch.pageX - scroller.offsetLeft;
+                scrollLeft = scroller.scrollLeft;
+            }, { passive: true });
+
+            scroller.addEventListener('touchmove', (e) => {
+                if (!isDown) return;
+                const touch = e.touches[0];
+                const x = touch.pageX - scroller.offsetLeft;
+                const walk = (x - startX);
+                scroller.scrollLeft = scrollLeft - walk;
+            }, { passive: false });
+
+            scroller.addEventListener('touchend', () => {
+                isDown = false;
+            });
+        }
+    } catch (e) {
+        console.error('❌ Error in Drag Scroll setup:', e);
     }
 
-    const paymentButtons = document.querySelectorAll('#reservationModal .payment-method-btn');
-    paymentButtons.forEach(btn => {
-        btn.addEventListener('click', function() {
-            paymentButtons.forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            if (paymentMethodInput) {
-                paymentMethodInput.value = this.dataset.value;
-            }
-        });
-    });
-
-    const payModalButtons = document.querySelectorAll('#bookingPaymentModal .payment-method-btn');
-    payModalButtons.forEach(btn => {
-        btn.addEventListener('click', function() {
-            payModalButtons.forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            const payMethodInput = document.getElementById('paymentMethodPay');
-            if (payMethodInput) {
-                payMethodInput.value = this.dataset.value;
-            }
-        });
-    });
-
-    const dpButtons = document.querySelectorAll('.dp-percent-btn');
-    dpButtons.forEach(btn => {
-        btn.addEventListener('click', function() {
-            dpButtons.forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            const percent = parseFloat(this.dataset.percent);
-            applyDpPercent(percent);
-        });
-    });
-    
-    if (roomSelect) {
-        roomSelect.addEventListener('change', function() {
-            const selectedOption = this.options[this.selectedIndex];
-            const price = selectedOption.getAttribute('data-price');
-            if (price) {
-                document.getElementById('roomPrice').value = price;
-                calculatePrice();
-            }
-        });
+    try {
+        // ========================================
+        // 2. NAVIGATION BUTTONS (PRIORITY)
+        // ========================================
+        const prevBtn = document.getElementById('prevMonthBtn');
+        const nextBtn = document.getElementById('nextMonthBtn');
+        
+        if (prevBtn) {
+            prevBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('Prev Month Clicked');
+                if (typeof window.prevMonth === 'function') {
+                    window.prevMonth();
+                } else {
+                    console.error('window.prevMonth is not defined');
+                }
+            });
+        }
+        if (nextBtn) {
+            nextBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('Next Month Clicked');
+                if (typeof window.nextMonth === 'function') {
+                    window.nextMonth();
+                } else {
+                    console.error('window.nextMonth is not defined');
+                }
+            });
+        }
+        console.log('✅ Navigation buttons initialized');
+    } catch (e) {
+        console.error('❌ Error in Navigation setup:', e);
     }
 
-    const prevBtn = document.getElementById('prevMonthBtn');
-    const nextBtn = document.getElementById('nextMonthBtn');
-    if (prevBtn) prevBtn.addEventListener('click', window.prevMonth);
-    if (nextBtn) nextBtn.addEventListener('click', window.nextMonth);
-*/
-    
-    // ========================================
-    // DRAG SCROLL WITH FORCED SCROLLING
-    // ========================================
-    const scroller = document.querySelector('.calendar-scroll-container');
-    const wrapper = document.querySelector('.calendar-wrapper');
-    const grid = document.querySelector('.calendar-grid');
-    
-    if (!scroller || !wrapper || !grid) {
-        console.error('❌ Elements not found');
-        return;
-    }
-    
-    // Force scroller to be scrollable
-    scroller.style.overflowX = 'auto';
-    scroller.style.overflowY = 'hidden';
-    grid.style.width = 'fit-content';
-    grid.style.minWidth = '100%';
-    
-    console.log('✅ Drag initialized');
-    console.log('Scroller:', scroller.clientWidth, 'scrollWidth:', scroller.scrollWidth, 'Grid:', grid.offsetWidth, 'Scrollable:', grid.offsetWidth > scroller.clientWidth);
-    
-    let isDown = false;
-    let startX;
-    let scrollLeft;
-    let moved = false;
-    let dragStartTarget = null;
-
-    const startDrag = (clientX, target) => {
-        isDown = true;
-        moved = false;
-        startX = clientX;
-        scrollLeft = scroller.scrollLeft;
-        dragStartTarget = target;
-        wrapper.classList.add('dragging');
-        document.body.classList.add('calendar-dragging');
-    };
-
-    const moveDrag = (clientX) => {
-        if (!isDown) return;
-
-        const walk = (clientX - startX);
-        const newScroll = scrollLeft - walk;
-
-        scroller.scrollLeft = newScroll;
-
-        if (Math.abs(walk) > 5) {
-            moved = true;
+    try {
+        // Form event listeners
+        const checkInDate = document.getElementById('checkInDate');
+        const checkOutDate = document.getElementById('checkOutDate');
+        const roomSelect = document.getElementById('roomSelect');
+        const roomPriceInput = document.getElementById('roomPrice');
+        const discountInput = document.getElementById('discount');
+        const adultInput = document.getElementById('adultCount');
+        const childrenInput = document.getElementById('childrenCount');
+        const paidAmountInput = document.getElementById('paidAmount');
+        const paymentMethodInput = document.getElementById('paymentMethod');
+        
+        if (checkInDate) checkInDate.addEventListener('change', calculateNights);
+        if (checkOutDate) checkOutDate.addEventListener('change', calculateNights);
+        if (roomPriceInput) roomPriceInput.addEventListener('input', calculatePrice);
+        if (discountInput) discountInput.addEventListener('input', calculatePrice);
+        if (adultInput) adultInput.addEventListener('change', calculateTotalPax);
+        if (childrenInput) childrenInput.addEventListener('change', calculateTotalPax);
+        
+        if (paidAmountInput) {
+            paidAmountInput.addEventListener('input', function() {
+                const dpButtons = document.querySelectorAll('.dp-percent-btn');
+                dpButtons.forEach(btn => btn.classList.remove('active'));
+                delete paidAmountInput.dataset.dpPercent;
+                if (typeof updatePaymentStatusFromAmount === 'function') {
+                    updatePaymentStatusFromAmount();
+                }
+            });
         }
-    };
 
-    const endDrag = () => {
-        if (!isDown) return;
-
-        isDown = false;
-        wrapper.classList.remove('dragging');
-        document.body.classList.remove('calendar-dragging');
-
-        const columnWidth = 60;
-        const currentScroll = scroller.scrollLeft;
-        const columnIndex = Math.round(currentScroll / columnWidth);
-        const targetScroll = columnIndex * columnWidth;
-
-        scroller.scrollTo({
-            left: targetScroll,
-            behavior: 'smooth'
+        const paymentButtons = document.querySelectorAll('#reservationModal .payment-method-btn');
+        paymentButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                paymentButtons.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                if (paymentMethodInput) {
+                    paymentMethodInput.value = this.dataset.value;
+                }
+            });
         });
 
-        setTimeout(() => {
-            moved = false;
-            dragStartTarget = null;
-        }, 200);
-    };
+        const payModalButtons = document.querySelectorAll('#bookingPaymentModal .payment-method-btn');
+        payModalButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                payModalButtons.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                const payMethodInput = document.getElementById('paymentMethodPay');
+                if (payMethodInput) {
+                    payMethodInput.value = this.dataset.value;
+                }
+            });
+        });
 
-    scroller.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        if (e.target.closest('.booking-bar')) return;
-        e.preventDefault();
-        startDrag(e.clientX, e.target);
-    }, { capture: true });
-
-    window.addEventListener('mousemove', (e) => {
-        if (!isDown) return;
-        e.preventDefault();
-        moveDrag(e.clientX);
-    }, { capture: true });
-
-    window.addEventListener('mouseup', (e) => {
-        if (!isDown) return;
-        e.preventDefault();
-        endDrag();
-    }, { capture: true });
-
-    scroller.addEventListener('mouseleave', endDrag);
-
-    scroller.addEventListener('touchstart', (e) => {
-        if (e.target.closest('.booking-bar')) return;
-        const touch = e.touches[0];
-        startDrag(touch.clientX, e.target);
-    }, { passive: true, capture: true });
-
-    scroller.addEventListener('touchmove', (e) => {
-        if (!isDown) return;
-        const touch = e.touches[0];
-        moveDrag(touch.clientX);
-    }, { passive: true });
-
-    scroller.addEventListener('touchend', endDrag, { passive: true });
-    
-    /*
-    // COMMENTED OUT - Reservation form click handler
-    // Will rebuild this properly later
-    wrapper.addEventListener('click', (e) => {
-        // If dragging was detected, block the click
-        if (moved) {
-            console.log('🚫 BLOCKED - Drag detected, moved:', moved);
-            e.preventDefault();
-            e.stopPropagation();
-            return;
+        const dpButtons = document.querySelectorAll('.dp-percent-btn');
+        dpButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                dpButtons.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                const percent = parseFloat(this.dataset.percent);
+                if (typeof applyDpPercent === 'function') {
+                    applyDpPercent(percent);
+                }
+            });
+        });
+        
+        if (roomSelect) {
+            roomSelect.addEventListener('change', function() {
+                const selectedOption = this.options[this.selectedIndex];
+                const price = selectedOption.getAttribute('data-price');
+                if (price) {
+                    document.getElementById('roomPrice').value = price;
+                    calculatePrice();
+                }
+            });
         }
-        
-        // Check if clicked on booking bar - don't open reservation form
-        if (e.target.closest('.booking-bar')) {
-            console.log('📋 Booking bar clicked - ignoring cell click');
-            return;
-        }
-        
-        const cell = e.target.closest('.grid-date-cell');
-        if (!cell) {
-            console.log('❌ No cell found');
-            return;
-        }
-        
-        // Store selected date and room for form pre-fill
-        const date = cell.dataset.date;
-        const roomId = cell.dataset.roomId;
-        const roomNumber = cell.dataset.roomNumber;
-        
-        console.log('✅ Cell clicked successfully!');
-        console.log('📅 Date:', date, 'Room:', roomNumber, 'ID:', roomId);
-        
-        // Save to pre-fill data
-        formPreFillData.date = date;
-        formPreFillData.roomId = roomId;
-        
-        // Close any open modals first to prevent overlap
-        const bookingPaymentModal = document.getElementById('bookingPaymentModal');
-        if (bookingPaymentModal) {
-            bookingPaymentModal.classList.remove('active');
-        }
-        const bookingDetailsModal = document.getElementById('bookingDetailsModal');
-        if (bookingDetailsModal) {
-            bookingDetailsModal.classList.remove('active');
-        }
-        const bookingQuickView = document.getElementById('bookingQuickView');
-        if (bookingQuickView) {
-            bookingQuickView.classList.remove('active');
-        }
-        
-        // Open reservation form
-        showReservationForm();
-    });
-    */
+    } catch (e) {
+        console.error('❌ Error in Form Listener setup:', e);
+    }
 });
 </script>
 
-<!-- COMMENTED OUT SECTION: Reservation Form Modal - Will rebuild from scratch
-<div id="reservationModal-hidden" class="modal-overlay">
+<!-- RESERVATION MODAL - POPUP -->
+<div id="reservationModal" class="modal-overlay">
     <div class="modal-content modal-content-large">
         <button class="modal-close" onclick="closeReservationModal()">×</button>
         
         <div class="modal-header">
             <h2>New Reservation</h2>
-            <p>Fill in the guest and booking details</p>
+            <p>Create a new booking manually (Walk-in/Phone/etc)</p>
         </div>
         
         <form id="reservationForm" onsubmit="submitReservation(event)">
-            ... reservation form html was here ...
+            <!-- Hidden Fields required by API -->
+            <input type="hidden" name="action" value="create_reservation">
+            <input type="hidden" name="booking_source" value="walk_in">
+            <input type="hidden" id="totalNights" name="total_nights" value="1">
+            <input type="hidden" id="hiddenFinalPrice" name="final_price" value="0">
+            <!-- Ensure room_price is sent -->
+            
+            <div class="form-section">
+                <h3>Guests Information</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Guest Name *</label>
+                        <input type="text" id="guestName" name="guest_name" required placeholder="Guest Name">
+                    </div>
+                    <div class="form-group">
+                        <label>Phone / WhatsApp</label>
+                        <input type="text" id="guestPhone" name="guest_phone" placeholder="08xxxxxxxxxx">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3>Stay Details</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Check In *</label>
+                        <input type="date" id="checkInDate" name="check_in_date" required onchange="updateStayDetails()">
+                    </div>
+                    <div class="form-group">
+                        <label>Check Out *</label>
+                        <input type="date" id="checkOutDate" name="check_out_date" required onchange="updateStayDetails()">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Room *</label>
+                        <select id="roomSelect" name="room_id" required onchange="updateRoomPrice()">
+                            <option value="">Select Room</option>
+                            <?php foreach ($rooms as $r): ?>
+                                <option value="<?php echo $r['id']; ?>" data-price="<?php echo $r['base_price']; ?>">
+                                    <?php echo $r['room_number']; ?> - <?php echo $r['type_name']; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Total Pax</label>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="number" id="adultCount" name="adult_count" value="1" min="1" placeholder="Adults" style="flex:1;">
+                            <input type="number" id="childrenCount" name="children_count" value="0" min="0" placeholder="Kids" style="flex:1;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3>Payment & Price</h3>
+                <div class="booking-summary-box">
+                    <div class="summary-row">
+                        <span>Room Price / Night</span>
+                        <input type="number" id="roomPrice" name="room_price" class="summary-input" value="0" readonly>
+                    </div>
+                     <div class="summary-row">
+                        <span>Total Nights</span>
+                        <span id="displayNights">1</span>
+                    </div>
+                    <div class="summary-row">
+                        <span>Discount</span>
+                        <input type="number" id="discount" name="discount" class="summary-input" value="0" onchange="calculateFinalPrice()">
+                    </div>
+                    <div class="summary-row total-row">
+                        <span>Grand Total</span>
+                        <strong id="finalPriceDisplay">Rp 0</strong>
+                    </div>
+                </div>
+                
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label>Initial Payment (DP)</label>
+                    <input type="number" id="paidAmount" name="paid_amount" value="0">
+                </div>
+                
+                <div class="form-group">
+                    <label>Payment Method</label>
+                    <div class="payment-method-group">
+                        <input type="hidden" name="payment_method" id="paymentMethod" value="cash">
+                        <button type="button" class="payment-method-btn active" data-value="cash" onclick="setPaymentMethod('cash', this)">Cash</button>
+                        <button type="button" class="payment-method-btn" data-value="transfer" onclick="setPaymentMethod('transfer', this)">Transfer</button>
+                        <button type="button" class="payment-method-btn" data-value="qris" onclick="setPaymentMethod('qris', this)">QRIS</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="booking-actions" style="margin-top: 1.5rem; justify-content: flex-end;">
+                <button type="button" class="btn-secondary" onclick="closeReservationModal()">Cancel</button>
+                <button type="submit" class="btn-primary">Save Reservation</button>
+            </div>
         </form>
     </div>
 </div>
-END COMMENTED OUT SECTION -->
+<!-- END RESERVATION MODAL -->
 
 
 
@@ -2804,11 +2961,45 @@ END COMMENTED OUT SECTION -->
 </div>
 
 <style>
-/* FORCE HIDE RESERVATION MODAL - COMMENTED OUT SECTION */
+/* RESERVATION MODAL STYLES */
 #reservationModal {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
+    display: none; /* Changed from none!important to allow flex via JS */
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+#reservationModal.active {
+    display: flex !important;
+}
+
+.booking-summary-box {
+    background: #f8fafc;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.summary-input {
+    width: 120px !important;
+    text-align: right;
+    padding: 0.25rem 0.5rem !important;
+}
+
+.total-row {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed #cbd5e1;
+    font-size: 1.1rem;
+    color: #6366f1;
 }
 
 /* FORCE HIDE PAYMENT MODAL - NOT NEEDED YET */

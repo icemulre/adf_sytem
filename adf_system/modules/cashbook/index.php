@@ -13,6 +13,7 @@ require_once '../../includes/print-helper.php';
 
 $auth = new Auth();
 $auth->requireLogin();
+$currentUser = $auth->getCurrentUser();
 $db = Database::getInstance();
 
 // Load business configuration
@@ -585,6 +586,7 @@ echo getPrintCSS();
                     <th>Divisi</th>
                     <th>Kategori</th>
                     <th>Tipe</th>
+                    <th>Metode</th>
                     <th style="text-align: right;">Jumlah</th>
                     <th>Deskripsi</th>
                     <th>Dibuat Oleh</th>
@@ -594,13 +596,50 @@ echo getPrintCSS();
             <tbody>
                 <?php if (empty($transactions)): ?>
                     <tr>
-                        <td colspan="9" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                        <td colspan="10" style="text-align: center; padding: 3rem; color: var(--text-muted);">
                             <i data-feather="inbox" style="width: 48px; height: 48px; margin-bottom: 1rem;"></i>
                             <div>Belum ada transaksi</div>
                         </td>
                     </tr>
                 <?php else: ?>
-                    <?php foreach ($transactions as $trans): ?>
+                    <?php 
+                    // Pre-calculate users per date (Shift detection)
+                    $usersByDate = [];
+                    foreach ($transactions as $t) {
+                        $d = date('Y-m-d', strtotime($t['transaction_date']));
+                        $userName = $t['created_by_name'] ? $t['created_by_name'] : 'System';
+                        
+                        if (!isset($usersByDate[$d])) { 
+                            $usersByDate[$d] = []; 
+                        }
+                        
+                        // Avoid duplicates
+                        if (!in_array($userName, $usersByDate[$d])) { 
+                            $usersByDate[$d][] = $userName; 
+                        }
+                    }
+
+                    $previousDate = null;
+                    foreach ($transactions as $trans): 
+                        // Date Separator Logic
+                        $currentDate = date('Y-m-d', strtotime($trans['transaction_date']));
+                        // Show separator for first item OR when date changes
+                        if ($previousDate === null || $currentDate !== $previousDate):
+                            // Get users for this specific date
+                            $shiftUsers = implode(', ', $usersByDate[$currentDate] ?? []);
+                    ?>
+                        <tr style="background-color: #f1f5f9; border-top: 2px solid #cbd5e1; border-bottom: 2px solid #cbd5e1;">
+                            <td colspan="10" style="text-align: center; font-weight: 700; color: #475569; padding: 0.5rem;">
+                                Transaksi tanggal: <?php echo formatDate($trans['transaction_date']); ?>
+                                <span style="margin-left: 15px; font-weight: 500; color: #64748b; font-size: 0.85em;">
+                                    <i data-feather="users" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;"></i>
+                                    Shift: <?php echo $shiftUsers; ?>
+                                </span>
+                            </td>
+                        </tr>
+                    <?php endif; 
+                        $previousDate = $currentDate;
+                    ?>
                         <tr>
                             <td class="date-cell" data-date="<?php echo $trans['transaction_date']; ?>">
                                 <?php echo formatDate($trans['transaction_date']); ?>
@@ -610,10 +649,29 @@ echo getPrintCSS();
                                 <strong><?php echo $trans['division_name']; ?></strong><br>
                                 <span style="font-size: 0.813rem; color: var(--text-muted);"><?php echo $trans['division_code']; ?></span>
                             </td>
-                            <td><?php echo $trans['category_name']; ?></td>
+                            <td>
+                                <?php 
+                                    // Custom Display for PO Payments
+                                    if ($trans['source_type'] === 'purchase_order' && strpos($trans['category_name'], 'Supplies') !== false) {
+                                        // Try to extract supplier name from description if available
+                                        if (preg_match('/Pembayaran PO .* - (.*)/', $trans['description'], $matches)) {
+                                            echo 'Payment ' . htmlspecialchars($matches[1]);
+                                        } else {
+                                            echo 'Payment Supplier';
+                                        }
+                                    } else {
+                                        echo $trans['category_name']; 
+                                    }
+                                ?>
+                            </td>
                             <td>
                                 <span class="badge <?php echo $trans['transaction_type']; ?>">
                                     <?php echo $trans['transaction_type'] === 'income' ? 'Masuk' : 'Keluar'; ?>
+                                </span>
+                            </td>
+                            <td>
+                                <span style="font-weight: 600; font-size: 0.85rem; color: #4b5563; padding: 2px 8px; background: #e2e8f0; border-radius: 4px;">
+                                    <?php echo htmlspecialchars(isset($trans['payment_method']) ? strtoupper($trans['payment_method']) : '-'); ?>
                                 </span>
                             </td>
                             <td style="text-align: right; font-weight: 700; color: <?php echo $trans['transaction_type'] === 'income' ? 'var(--success)' : 'var(--danger)'; ?>;">
@@ -623,7 +681,7 @@ echo getPrintCSS();
                                 <?php if (isset($trans['source_type']) && $trans['source_type'] != 'manual'): ?>
                                     <span style="display: inline-flex; align-items: center; gap: 0.375rem; background: #dbeafe; color: #1e40af; padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 600; margin-right: 0.5rem;">
                                         <i data-feather="shopping-cart" style="width: 12px; height: 12px;"></i>
-                                        PO #<?php echo $trans['source_id']; ?>
+                                        <?php echo isset($trans['reference_no']) ? $trans['reference_no'] : 'REF'; ?>
                                     </span>
                                 <?php endif; ?>
                                 <?php echo $trans['description'] ?: '-'; ?>

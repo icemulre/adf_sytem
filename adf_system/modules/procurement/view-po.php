@@ -57,6 +57,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 $po = getPurchaseOrder($po_id);
 
+// Fix: Fetch attachment from new table 'transaction_attachments' if not in main table
+if ($po && empty($po['attachment_path'])) {
+    $attachment = $db->fetchOne("SELECT file_path FROM transaction_attachments WHERE transaction_type = 'purchase_order' AND transaction_id = ? ORDER BY id DESC LIMIT 1", [$po_id]);
+    if ($attachment) {
+        $po['attachment_path'] = $attachment['file_path'];
+    }
+}
+
 if (!$po) {
     header('Location: purchase-orders.php');
     exit;
@@ -122,7 +130,7 @@ include '../../includes/header.php';
                 </form>
                 <?php endif; ?>
             <?php endif; ?>
-            <?php if ($po['attachment_path']): ?>
+            <?php if (!empty($po['attachment_path'])): ?>
                 <a href="../../<?php echo $po['attachment_path']; ?>" target="_blank" class="btn btn-info btn-sm">
                     <i data-feather="image" style="width: 14px; height: 14px;"></i>
                     Lihat Nota

@@ -48,12 +48,14 @@ $purchases = $db->fetchAll("
         s.supplier_code,
         u.full_name as created_by_name,
         a.full_name as approved_by_name,
-        COUNT(pod.id) as items_count
+        COUNT(pod.id) as items_count,
+        COALESCE(ta.file_path, NULL) as ta_attachment_path
     FROM purchase_orders_header poh
     LEFT JOIN suppliers s ON poh.supplier_id = s.id
     LEFT JOIN users u ON poh.created_by = u.id
     LEFT JOIN users a ON poh.approved_by = a.id
     LEFT JOIN purchase_orders_detail pod ON poh.id = pod.po_header_id
+    LEFT JOIN transaction_attachments ta ON ta.transaction_type = 'purchase_order' AND ta.transaction_id = poh.id
     {$where_clause}
     GROUP BY poh.id
     ORDER BY poh.approved_at DESC
@@ -252,8 +254,15 @@ include '../../includes/header.php';
                         </td>
                         <td><?php echo $purchase['approved_by_name']; ?></td>
                         <td>
-                            <?php if ($purchase['attachment_path']): ?>
-                                <a href="../../<?php echo $purchase['attachment_path']; ?>" target="_blank" class="btn btn-sm btn-success">
+                            <?php 
+                            // Determine attachment path safely
+                            $attPath = isset($purchase['attachment_path']) ? $purchase['attachment_path'] : '';
+                            if (empty($attPath) && isset($purchase['ta_attachment_path'])) $attPath = $purchase['ta_attachment_path'];
+                            if (empty($attPath) && isset($purchase['file_path'])) $attPath = $purchase['file_path'];
+                            ?>
+
+                            <?php if (!empty($attPath)): ?>
+                                <a href="../../<?php echo $attPath; ?>" target="_blank" class="btn btn-sm btn-success">
                                     <i data-feather="image" style="width: 14px; height: 14px;"></i>
                                     Lihat
                                 </a>

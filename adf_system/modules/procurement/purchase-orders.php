@@ -254,18 +254,37 @@ include '../../includes/header.php';
                                             </button>
                                         </form>
                                     <?php elseif ($po['status'] === 'submitted'): ?>
-                                        <button type="button" class="btn btn-sm" title="Approve & Bayar" onclick="openApproveDialog(<?php echo $po['id']; ?>, '<?php echo $po['po_number']; ?>', <?php echo $po['total_amount']; ?>)" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; font-weight: 600; border: none; box-shadow: 0 2px 6px rgba(16,185,129,0.3);">
-                                            <i data-feather="check-circle" style="width: 14px; height: 14px;"></i>
-                                            <span style="margin-left: 0.25rem; font-size: 0.75rem;">Bayar</span>
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-danger" title="Reject & Hapus PO" onclick="rejectPO(<?php echo $po['id']; ?>, '<?php echo $po['po_number']; ?>')">
-                                            <i data-feather="x-circle" style="width: 14px; height: 14px;"></i>
-                                            <span style="margin-left: 0.25rem; font-size: 0.75rem;">Reject</span>
-                                        </button>
-                                    <?php elseif ($po['status'] === 'completed' && !empty($po['attachment_path'])): ?>
-                                        <a href="<?php echo BASE_URL . '/' . $po['attachment_path']; ?>" target="_blank" class="btn btn-sm btn-info" title="Lihat Nota">
-                                            <i data-feather="file-text" style="width: 14px; height: 14px;"></i>
-                                        </a>
+                                        <?php if (!empty($po['payment_id'])): ?>
+                                             <!-- Logic: Paid but Status Stuck -->
+                                             <form method="POST" action="approve-purchase.php" style="display:inline;">
+                                                <input type="hidden" name="approve" value="1">
+                                                <input type="hidden" name="po_id" value="<?php echo $po['id']; ?>">
+                                                <button type="submit" class="btn btn-sm" title="Perbarui Status (Sudah Dibayar)" style="background: #8b5cf6; color: white; border: none;">
+                                                    <i data-feather="refresh-cw" style="width: 14px; height: 14px;"></i> Update
+                                                </button>
+                                             </form>
+                                        <?php else: ?>
+                                            <button type="button" class="btn btn-sm" title="Approve & Bayar" onclick="openApproveDialog(<?php echo $po['id']; ?>, '<?php echo $po['po_number']; ?>', <?php echo $po['total_amount']; ?>)" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; font-weight: 600; border: none; box-shadow: 0 2px 6px rgba(16,185,129,0.3);">
+                                                <i data-feather="check-circle" style="width: 14px; height: 14px;"></i>
+                                                <span style="margin-left: 0.25rem; font-size: 0.75rem;">Bayar</span>
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-danger" title="Reject & Hapus PO" onclick="rejectPO(<?php echo $po['id']; ?>, '<?php echo $po['po_number']; ?>')">
+                                                <i data-feather="x-circle" style="width: 14px; height: 14px;"></i>
+                                                <span style="margin-left: 0.25rem; font-size: 0.75rem;">Reject</span>
+                                            </button>
+                                        <?php endif; ?>
+                                    <?php elseif ($po['status'] === 'completed'): ?>
+                                        <?php 
+                                        // Prioritize attachment column if exists, then new table, then fallback
+                                        $attPath = isset($po['attachment_path']) ? $po['attachment_path'] : '';
+                                        if (empty($attPath) && isset($po['ta_attachment_path'])) $attPath = $po['ta_attachment_path'];
+                                        if (empty($attPath) && isset($po['file_path'])) $attPath = $po['file_path'];
+                                        ?>
+                                        <?php if (!empty($attPath)): ?>
+                                            <a href="<?php echo BASE_URL . '/' . $attPath; ?>" target="_blank" class="btn btn-sm btn-info" title="Lihat Nota">
+                                                <i data-feather="file-text" style="width: 14px; height: 14px;"></i>
+                                            </a>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                 </div>
                             </td>

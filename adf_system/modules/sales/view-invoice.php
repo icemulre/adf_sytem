@@ -42,29 +42,67 @@ $items = $db->fetchAll("
 ", [$invoice_id]);
 
 // Get company/hotel info from active business configuration
+// Get all settings at once for efficiency
+$allSettings = $db->fetchAll("SELECT setting_key, setting_value FROM settings", []);
+$settingsMap = [];
+foreach ($allSettings as $setting) {
+    $settingsMap[$setting['setting_key']] = $setting['setting_value'];
+}
+
+// Get invoice-specific logo for this business
+$invoiceLogoKey = 'invoice_logo_' . ACTIVE_BUSINESS_ID;
+$invoiceLogo = $settingsMap[$invoiceLogoKey] ?? null;
+
+// Get report display settings
+$showLogo = ($settingsMap['report_show_logo'] ?? '1') === '1';
+$showAddress = ($settingsMap['report_show_address'] ?? '1') === '1';
+$showPhone = ($settingsMap['report_show_phone'] ?? '1') === '1';
+
 $companySettings = [
-    'name' => $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'company_name'")['setting_value'] ?? BUSINESS_NAME,
+    'name' => $settingsMap['company_name'] ?? BUSINESS_NAME,
+    'tagline' => $settingsMap['company_tagline'] ?? '',
     'business_icon' => BUSINESS_ICON,
     'business_color' => BUSINESS_COLOR,
-    'address' => $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'company_address'")['setting_value'] ?? '',
-    'phone' => $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'company_phone'")['setting_value'] ?? '',
-    'email' => $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'company_email'")['setting_value'] ?? '',
-    'logo' => $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'company_logo'")['setting_value'] ?? null,
-    'invoice_logo' => $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'invoice_logo'")['setting_value'] ?? null
+    'address' => $showAddress ? ($settingsMap['company_address'] ?? '') : '',
+    'phone' => $showPhone ? ($settingsMap['company_phone'] ?? '') : '',
+    'email' => $settingsMap['company_email'] ?? '',
+    'logo' => $settingsMap['company_logo'] ?? null,
+    'invoice_logo' => $invoiceLogo,
+    'show_logo' => $showLogo
 ];
 
-// Use invoice logo if available, otherwise use company logo
-$displayLogo = $companySettings['invoice_logo'] ?? $companySettings['logo'];
+// Use invoice logo if available and enabled, otherwise use company logo
+// Invoice logo is stored as filename only in database (e.g., "narayana-hotel_invoice_logo.png")
+if ($showLogo && $invoiceLogo) {
+    $displayLogo = 'uploads/logos/' . $invoiceLogo;
+} elseif ($showLogo && $companySettings['logo']) {
+    $displayLogo = $companySettings['logo'];
+} else {
+    $displayLogo = null;
+}
 
 // Convert relative path to absolute for PDF export
 $absoluteLogoPath = null;
 if ($displayLogo) {
+    // Check if it's already an absolute URL
     if (strpos($displayLogo, 'http') === 0) {
-        $absoluteLogoPath = $displayLogo; // Already absolute URL
-    } elseif (file_exists($_SERVER['DOCUMENT_ROOT'] . $displayLogo)) {
-        $absoluteLogoPath = $_SERVER['DOCUMENT_ROOT'] . $displayLogo;
-    } elseif (file_exists($displayLogo)) {
-        $absoluteLogoPath = $displayLogo; // Already correct path
+        $absoluteLogoPath = $displayLogo;
+    } else {
+        // Try different possible paths
+        $possiblePaths = [
+            $_SERVER['DOCUMENT_ROOT'] . '/adf_system/' . $displayLogo,
+            dirname(dirname(dirname(__FILE__))) . '/' . $displayLogo,
+            $_SERVER['DOCUMENT_ROOT'] . '/adf_system/uploads/' . basename($displayLogo),
+            dirname(dirname(dirname(__FILE__))) . '/uploads/' . basename($displayLogo),
+            $displayLogo
+        ];
+        
+        foreach ($possiblePaths as $path) {
+            if (file_exists($path)) {
+                $absoluteLogoPath = $path;
+                break;
+            }
+        }
     }
 }
 
@@ -138,14 +176,16 @@ if (isset($_GET['export']) && $_GET['export'] === 'pdf') {
             }
             .status-badge {
                 display: inline-block;
-                padding: 5px 10px;
+                padding: 8px 15px;
                 border-radius: 4px;
-                font-size: 10px;
+                font-size: 14px;
+                font-weight: bold;
                 margin-top: 5px;
+                border: 1px solid transparent;
             }
-            .status-paid { background: #d4edda; color: #155724; }
-            .status-unpaid { background: #f8d7da; color: #721c24; }
-            .status-partial { background: #fff3cd; color: #856404; }
+            .status-paid { background: #d4edda; color: #155724; border-color: #c3e6cb; }
+            .status-unpaid { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+            .status-partial { background: #fff3cd; color: #856404; border-color: #ffeeba; }
             
             .section-title {
                 font-size: 10px;
@@ -262,7 +302,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'pdf') {
                     <div class="invoice-number">' . htmlspecialchars($invoice['invoice_number']) . '</div>
                     <div>' . date('d M Y', strtotime($invoice['invoice_date'])) . '</div>
                     <span class="status-badge ' . ($invoice['payment_status'] === 'paid' ? 'status-paid' : ($invoice['payment_status'] === 'unpaid' ? 'status-unpaid' : 'status-partial')) . '">
-                        ' . ($invoice['payment_status'] === 'paid' ? '✓ LUNAS' : ($invoice['payment_status'] === 'unpaid' ? '⏳ BELUM BAYAR' : '⚠ SEBAGIAN')) . '
+                        ' . ($invoice['payment_status'] === 'paid' ? '✓ PAID' : ($invoice['payment_status'] === 'unpaid' ? '⏳ UNPAID' : '⚠ PARTIAL')) . '
                     </span>
                 </div>
             </div>
@@ -676,9 +716,24 @@ if ($print_mode) {
             <!-- Premium Header -->
             <div class="header-section">
                 <div class="company-header">
-                    <?php if ($displayLogo && file_exists($displayLogo)): ?>
+                    <?php if ($displayLogo): 
+                        // FINAL FIX: Trust the URL structure
+                        // displayLogo usually equals "uploads/logos/filename.png"
+                        if (strpos($displayLogo, 'http') === 0) {
+                            $logoUrl = $displayLogo;
+                        } else {
+                            // Construct absolute URL safely
+                            $logoUrl = rtrim(BASE_URL, '/') . '/' . ltrim($displayLogo, '/');
+                            
+                            // Add cache buster
+                            $logoUrl .= '?t=' . time();
+                        }
+                    ?>
                         <div class="company-logo">
-                            <img src="<?php echo $displayLogo; ?>" alt="Logo">
+                            <img src="<?php echo htmlspecialchars($logoUrl); ?>" 
+                                 alt="<?php echo htmlspecialchars($companySettings['name']); ?>"
+                                 onerror="this.style.display='none'; this.parentNode.innerHTML='<span style=\'font-size:12px;color:red\'>Image Load Error: ' + this.src + '</span>';" 
+                                 style="max-height: 100px; width: auto; object-fit: contain;">
                         </div>
                     <?php else: ?>
                         <div class="company-logo" style="font-size: 40px; color: <?php echo $companySettings['business_color']; ?>;">
@@ -686,7 +741,12 @@ if ($print_mode) {
                         </div>
                     <?php endif; ?>
                     <div class="company-info">
-                        <div class="company-name"><?php echo $companySettings['name']; ?></div>
+                        <div class="company-name"><?php echo htmlspecialchars($companySettings['name']); ?></div>
+                        <?php if ($companySettings['tagline']): ?>
+                            <div style="font-size: 11px; color: #666; margin-top: 2px; font-style: italic;">
+                                <?php echo htmlspecialchars($companySettings['tagline']); ?>
+                            </div>
+                        <?php endif; ?>
                         <div class="company-details">
                             <?php if ($companySettings['address']): ?>
                                 <?php echo htmlspecialchars($companySettings['address']); ?><br>
@@ -883,16 +943,40 @@ include '../../includes/header.php';
         <!-- Header -->
         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 3px solid var(--primary-color);">
             <div>
-                <div style="font-size: 2rem; font-weight: 900; background: linear-gradient(135deg, <?php echo BUSINESS_COLOR; ?>, #000); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;"><?php echo BUSINESS_NAME; ?></div>
-                <div style="font-size: 3rem; line-height: 1; margin-top: 0.5rem;"><?php echo BUSINESS_ICON; ?></div>
+                <?php 
+                // WEB VIEW LOGO LOGIC
+                // Re-use variables defined at top of file
+                if ($displayLogo) {
+                    // Logic to resolve URL
+                    if (strpos($displayLogo, 'http') === 0) {
+                        $logoWebUrl = $displayLogo;
+                    } else {
+                        $logoWebUrl = rtrim(BASE_URL, '/') . '/' . ltrim($displayLogo, '/');
+                        $logoWebUrl .= '?t=' . time(); // Cache buster
+                    }
+                    
+                    echo '<img src="' . htmlspecialchars($logoWebUrl) . '" alt="' . htmlspecialchars($companySettings['name']) . '" style="max-height: 150px; width: auto; margin-bottom: 1rem;">';
+                } else {
+                    // Fallback to Icon
+                    echo '<div style="font-size: 3rem; line-height: 1; margin-bottom: 0.5rem;">' . $companySettings['business_icon'] . '</div>';
+                }
+                ?>
+                
+                <div style="font-size: 2rem; font-weight: 900; background: linear-gradient(135deg, <?php echo $companySettings['business_color']; ?>, #000); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 0.25rem;">
+                    <?php echo htmlspecialchars($companySettings['name']); ?>
+                </div>
+                
+                <?php if ($companySettings['tagline']): ?>
+                    <div style="font-size: 0.9rem; color: #666; font-style: italic; margin-bottom: 0.5rem;">
+                        <?php echo htmlspecialchars($companySettings['tagline']); ?>
+                    </div>
+                <?php endif; ?>
+                
                 <div style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.5;">
                     <?php 
-                    $address = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'company_address'")['setting_value'] ?? '';
-                    $phone = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'company_phone'")['setting_value'] ?? '';
-                    $email = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'company_email'")['setting_value'] ?? '';
-                    if ($address) echo nl2br($address) . '<br>';
-                    if ($phone) echo 'Tel: ' . $phone . '<br>';
-                    if ($email) echo 'Email: ' . $email;
+                    if ($showAddress && $companySettings['address']) echo nl2br($companySettings['address']) . '<br>';
+                    if ($showPhone && $companySettings['phone']) echo 'Tel: ' . $companySettings['phone'] . '<br>';
+                    if ($companySettings['email']) echo 'Email: ' . $companySettings['email'];
                     ?>
                 </div>
             </div>
@@ -902,9 +986,9 @@ include '../../includes/header.php';
                 <div style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.5rem;"><?php echo date('d F Y', strtotime($invoice['invoice_date'])); ?></div>
                 <?php
                 $status_colors = ['paid' => 'success', 'unpaid' => 'danger', 'partial' => 'warning'];
-                $status_labels = ['paid' => '✓ LUNAS', 'unpaid' => '⏳ BELUM BAYAR', 'partial' => '⏱ SEBAGIAN'];
+                $status_labels = ['paid' => '✓ PAID', 'unpaid' => '⏳ UNPAID', 'partial' => '⏱ PARTIAL'];
                 ?>
-                <span class="badge badge-<?php echo $status_colors[$invoice['payment_status']]; ?>" style="margin-top: 0.75rem; font-size: 0.875rem; padding: 0.5rem 1rem;">
+                <span class="badge badge-<?php echo $status_colors[$invoice['payment_status']]; ?>" style="margin-top: 0.75rem; font-size: 1.25rem; padding: 0.75rem 1.5rem;">
                     <?php echo $status_labels[$invoice['payment_status']]; ?>
                 </span>
             </div>
@@ -997,7 +1081,12 @@ include '../../includes/header.php';
         
         <!-- Footer Info -->
         <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 2px solid var(--bg-tertiary); text-align: center; color: var(--text-muted); font-size: 0.875rem;">
-            <div>Dibuat oleh: <?php echo $invoice['created_by_name']; ?> | Tanggal: <?php echo date('d/m/Y H:i', strtotime($invoice['created_at'])); ?></div>
+            <?php 
+            // Get current logged in user
+            $currentUser = $auth->getCurrentUser();
+            $creatorName = $currentUser ? $currentUser['full_name'] : ($invoice['created_by_name'] ?? 'System');
+            ?>
+            <div>Dibuat oleh: <?php echo htmlspecialchars($creatorName); ?> | Tanggal: <?php echo date('d/m/Y H:i', strtotime($invoice['created_at'])); ?></div>
             <div style="margin-top: 0.5rem;">
                 <strong>Metode Pembayaran:</strong> 
                 <?php 

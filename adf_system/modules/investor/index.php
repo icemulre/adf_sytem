@@ -28,15 +28,87 @@ try {
     $projects = [];
 }
 
-// Calculate totals
-$totalCapital = 0;
-$totalExpenses = 0;
+// Calculate Global Totals Initial
+$globalTotalCapital = 0;
 foreach ($investors as $inv) {
-    $totalCapital += $inv['total_capital'] ?? 0;
-    $totalExpenses += $inv['total_expenses'] ?? 0;
+    $globalTotalCapital += $inv['total_capital'] ?? 0;
 }
 
-// Get project expenses summary
+$globalTotalExpenses = 0;
+try {
+    $stmt = $db->query("SELECT COALESCE(SUM(amount_idr), 0) FROM project_expenses");
+    $globalTotalExpenses = $stmt->fetchColumn();
+} catch (Exception $e) {
+    $globalTotalExpenses = 0;
+}
+
+
+// Filter Logic
+$selectedProjectId = isset($_GET['project_id']) ? $_GET['project_id'] : 'all';
+$dashboardStats = [];
+$recentTransactions = [];
+
+// Display Variables for Charts & Stats
+$totalCapitalDisplay = 0;
+$totalExpensesDisplay = 0;
+
+if ($selectedProjectId !== 'all') {
+    // Single Project Stats
+    $project = null;
+    foreach ($projects as $p) {
+        if ($p['id'] == $selectedProjectId) {
+            $project = $p;
+            break;
+        }
+    }
+
+    if ($project) {
+        // Total Inflow (Budget)
+        $totalCapitalDisplay = $project['budget'];
+        
+        // Total Outflow (Expenses)
+        $stmt = $db->prepare("SELECT COALESCE(SUM(amount_idr), 0) FROM project_expenses WHERE project_id = ?");
+        $stmt->execute([$selectedProjectId]);
+        $totalExpensesDisplay = $stmt->fetchColumn();
+        
+        // Recent Transactions
+        $stmt = $db->prepare("SELECT * FROM project_expenses WHERE project_id = ? ORDER BY expense_date DESC, created_at DESC LIMIT 10");
+        $stmt->execute([$selectedProjectId]);
+        $recentTransactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+} else {
+    // All Projects Stats (Global) - Default behavior
+    $totalCapitalDisplay = $globalTotalCapital;
+    $totalExpensesDisplay = $globalTotalExpenses;
+    
+    // Recent Transactions (Global)
+    $stmt = $db->query("SELECT pe.*, p.name as project_name FROM project_expenses pe LEFT JOIN projects p ON pe.project_id = p.id ORDER BY pe.expense_date DESC, pe.created_at DESC LIMIT 10");
+    $recentTransactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// Bind to Dashboard Stats
+$dashboardStats['inflow'] = $totalCapitalDisplay;
+$dashboardStats['outflow'] = $totalExpensesDisplay;
+
+// Prepare variables for JS Charts (backward compatibility with existing JS)
+$totalCapital = $totalCapitalDisplay;
+$totalExpenses = $totalExpensesDisplay;
+
+// Get All Expenses for Finance Tab
+try {
+    $allExpensesStmt = $db->query("
+        SELECT pe.*, p.name as project_name 
+        FROM project_expenses pe 
+        LEFT JOIN projects p ON pe.project_id = p.id 
+        ORDER BY pe.expense_date DESC, pe.created_at DESC
+        LIMIT 100
+    ");
+    $allExpenses = $allExpensesStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    $allExpenses = [];
+}
+
+// Get project expenses summary for map (if needed below)
 try {
     $stmt = $db->prepare("
         SELECT project_id, SUM(amount_idr) as total_expenses 
@@ -342,67 +414,157 @@ include '../../includes/header.php';
     <!-- Tabs -->
     <div class="tabs">
         <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+        <button class="tab-btn" data-tab="finance">Keuangan (Uang Keluar)</button>
         <button class="tab-btn" data-tab="investor">Daftar Investor</button>
         <button class="tab-btn" data-tab="project">Daftar Project</button>
-        <button class="tab-btn" data-tab="expense">Input Pengeluaran</button>
         <button class="tab-btn" data-tab="accounting">Laporan Akuntansi</button>
     </div>
 
-    <!-- Statistics Cards -->
+    <!-- Dashboard Tab -->
     <div id="dashboard" class="tab-content active">
-    <div class="stats-grid">
-        <div class="stat-card">
-            <h3>👥 Total Investor</h3>
-            <div class="value"><?php echo count($investors) ?? 0; ?></div>
-            <div class="label">Investor aktif</div>
+        
+        <!-- Project Filter -->
+        <div style="margin-bottom: 2rem; background: white; padding: 1rem; border-radius: 12px; border: 1px solid var(--border-color); display: flex; align-items: center; gap: 1rem;">
+            <label style="font-weight: 600; color: var(--text-secondary);">Pilih Project:</label>
+            <form id="projectFilterForm" method="GET" style="margin: 0; flex: 1;">
+                <select name="project_id" onchange="this.form.submit()" style="padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--border-color); width: 100%; max-width: 300px; font-size: 1rem;">
+                    <option value="all" <?php echo $selectedProjectId === 'all' ? 'selected' : ''; ?>>-- Global Overview (Semua) --</option>
+                    <?php foreach ($projects as $p): ?>
+                        <option value="<?php echo $p['id']; ?>" <?php echo $selectedProjectId == $p['id'] ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($p['name']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
         </div>
 
-        <div class="stat-card">
-            <h3>📊 Total Project</h3>
-            <div class="value"><?php echo count($projects) ?? 0; ?></div>
-            <div class="label">Project berjalan</div>
+        <div class="stats-grid">
+            <div class="stat-card" style="border-left: 4px solid #10b981;">
+                <h3>💰 Total Dana Masuk <?php echo $selectedProjectId !== 'all' ? '(Budget)' : '(Modal)'; ?></h3>
+                <div class="value">Rp <?php echo number_format($dashboardStats['inflow'] ?? 0, 0, ',', '.'); ?></div>
+                <div class="label"><?php echo $selectedProjectId !== 'all' ? 'Alokasi dana project' : 'Total dana investor'; ?></div>
+            </div>
+
+            <div class="stat-card" style="border-left: 4px solid #ef4444;">
+                <h3>📤 Total Pengeluaran</h3>
+                <div class="value">Rp <?php echo number_format($dashboardStats['outflow'] ?? 0, 0, ',', '.'); ?></div>
+                <div class="label"><?php echo $selectedProjectId !== 'all' ? 'Pengeluaran project ini' : 'Semua pengeluaran system'; ?></div>
+            </div>
+
+            <div class="stat-card" style="border-left: 4px solid #3b82f6;">
+                <h3>📊 Sisa Dana</h3>
+                <div class="value">Rp <?php echo number_format(($dashboardStats['inflow'] - $dashboardStats['outflow']) ?? 0, 0, ',', '.'); ?></div>
+                <div class="label">Balance tersedia</div>
+            </div>
+            
+            <?php if ($selectedProjectId === 'all'): ?>
+            <div class="stat-card">
+                <h3>👥 Total Investor</h3>
+                <div class="value"><?php echo count($investors) ?? 0; ?></div>
+                <div class="label">Investor aktif</div>
+            </div>
+            <?php else: ?>
+            <div class="stat-card">
+                <h3>📅 Project Status</h3>
+                <div class="value" style="font-size: 1rem; text-transform: uppercase;">
+                    <?php echo htmlspecialchars($project['status'] ?? 'Active'); ?>
+                </div>
+                <div class="label"><?php echo htmlspecialchars($project['location'] ?? ''); ?></div>
+            </div>
+            <?php endif; ?>
+        </div>
+        
+        <!-- Recent Transactions Section -->
+        <div class="content-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                <h3 class="section-title" style="margin: 0; border: none; padding: 0;">⏱️ Transaksi Terbaru</h3>
+                <a href="#" onclick="document.querySelector('[data-tab=\'finance\']').click(); return false;" style="color: #667eea; text-decoration: none; font-weight: 600; font-size: 0.9rem;">Lihat Semua &rarr;</a>
+            </div>
+            
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Tanggal</th>
+                        <th>Kategori</th>
+                        <th>Keterangan</th>
+                        <?php if ($selectedProjectId === 'all'): ?><th>Project</th><?php endif; ?>
+                        <th style="text-align: right;">Jumlah</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($recentTransactions)): ?>
+                        <tr><td colspan="5" style="text-align: center; padding: 2rem;">Belum ada transaksi</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($recentTransactions as $rt): ?>
+                        <tr>
+                            <td><?php echo date('d/m/Y', strtotime($rt['expense_date'])); ?></td>
+                            <td>
+                                <span class="status-badge" style="background: #e0e7ff; color: #3730a3;">
+                                    <?php echo htmlspecialchars($rt['category']); ?>
+                                </span>
+                            </td>
+                            <td><?php echo htmlspecialchars($rt['description']); ?></td>
+                            <?php if ($selectedProjectId === 'all'): ?>
+                                <td><?php echo htmlspecialchars($rt['project_name'] ?? '-'); ?></td>
+                            <?php endif; ?>
+                            <td class="amount" style="text-align: right; color: #ef4444;">
+                                Rp <?php echo number_format($rt['amount_idr'], 0, ',', '.'); ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         </div>
 
-        <div class="stat-card">
-            <h3>💰 Total Modal</h3>
-            <div class="value">Rp <?php echo number_format($totalCapital, 0, ',', '.'); ?></div>
-            <div class="label">Dana terkumpul</div>
-        </div>
-
-        <div class="stat-card">
-            <h3>📈 Total Pengeluaran</h3>
-            <div class="value">Rp <?php echo number_format($totalExpenses, 0, ',', '.'); ?></div>
-            <div class="label">Semua project</div>
-        </div>
-    </div>
-
-    <!-- Charts Grid -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem; margin-top: 2rem;">
+    <!-- Old Charts Grid (Hidden if specific project is selected to keep it clean, or we can keep it) -->
+    <?php if ($selectedProjectId === 'all'): ?>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
         <!-- Chart 1: Uang Masuk -->
         <div class="content-section">
             <h3 class="section-title">📥 Total Uang Masuk Per Investor</h3>
-            <canvas id="chartModalMasuk"></canvas>
+            <div style="height: 250px; position: relative;">
+                <canvas id="chartModalMasuk"></canvas>
+            </div>
+            <div style="margin-top: 15px; max-height: 150px; overflow-y: auto;">
+                <table style="width: 100%; font-size: 0.85rem;">
+                    <?php foreach ($investors as $inv): ?>
+                    <tr style="border-bottom: 1px dashed #eee;">
+                        <td style="padding: 6px 0; color: #666;"><?php echo htmlspecialchars($inv['name']); ?></td>
+                        <td style="padding: 6px 0; text-align: right; font-weight: 600; color: var(--text-primary);">
+                            Rp <?php echo number_format($inv['total_capital'] ?? 0, 0, ',', '.'); ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </table>
+            </div>
         </div>
 
         <!-- Chart 2: Uang Keluar -->
         <div class="content-section">
             <h3 class="section-title">📤 Perbandingan Modal vs Pengeluaran</h3>
-            <canvas id="chartModalKeluar"></canvas>
+            <div style="height: 250px; position: relative; display: flex; justify-content: center;">
+                <canvas id="chartModalKeluar"></canvas>
+            </div>
         </div>
 
         <!-- Chart 3: Progres Project -->
         <div class="content-section">
             <h3 class="section-title">⏳ Progres Pengeluaran Project</h3>
-            <canvas id="chartProgresProject"></canvas>
+            <div style="height: 250px; position: relative;">
+                <canvas id="chartProgresProject"></canvas>
+            </div>
         </div>
 
         <!-- Chart 4: Detail Pengeluaran -->
         <div class="content-section">
             <h3 class="section-title">💸 Total Pengeluaran Per Project</h3>
-            <canvas id="chartDetailPengeluaran"></canvas>
+            <div style="height: 250px; position: relative;">
+                <canvas id="chartDetailPengeluaran"></canvas>
+            </div>
         </div>
     </div>
-    </div>
+    <?php endif; ?>
     </div>
 
     <!-- Investors Tab -->
@@ -514,12 +676,12 @@ include '../../includes/header.php';
     </div>
     </div>
 
-    <!-- Expense Input Tab -->
-    <div id="expense" class="tab-content">
+    <!-- Expense Input / Finance Tab -->
+    <div id="finance" class="tab-content">
     <div class="content-section">
-        <h2 class="section-title">➕ Input Pengeluaran Project</h2>
+        <h2 class="section-title">💸 Keuangan (Uang Keluar) & Input Pengeluaran</h2>
         
-        <form id="expenseForm" method="POST" style="background: var(--bg-tertiary, rgba(0,0,0,0.05)); padding: 2rem; border-radius: 8px;">
+        <form id="expenseForm" method="POST" action="save-expense.php" style="background: var(--bg-tertiary, rgba(0,0,0,0.05)); padding: 2rem; border-radius: 8px;">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
                 <div>
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text-primary);">Project</label>
@@ -543,7 +705,7 @@ include '../../includes/header.php';
                         <option value="material">Pembelian Material</option>
                         <option value="transport">Pembayaran Truk</option>
                         <option value="ship">Tiket Kapal</option>
-                        <option value="labor">Gaji Tukang</option>
+                        <option value="labor" style="font-weight: bold; color: #d97706;">💰 Pembayaran Gaji (Tukang/Staff)</option>
                         <option value="other">Lainnya</option>
                     </select>
                 </div>
@@ -567,8 +729,58 @@ include '../../includes/header.php';
         </form>
 
         <div style="margin-top: 2rem;">
-            <h3 style="color: var(--text-primary);">📋 Riwayat Pengeluaran</h3>
-            <p style="color: var(--text-secondary);">Belum ada pengeluaran tercatat</p>
+            <h3 style="color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">📋 Detail Keuangan & Riwayat Pengeluaran</h3>
+            
+            <?php if (empty($allExpenses)): ?>
+            <div class="empty-state">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                <p>Belum ada pengeluaran tercatat</p>
+            </div>
+            <?php else: ?>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Tanggal</th>
+                        <th>Project</th>
+                        <th>Kategori</th>
+                        <th>Keterangan</th>
+                        <th style="text-align: right;">Jumlah</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($allExpenses as $exp): 
+                        $isSalary = ($exp['category'] === 'labor');
+                        $rowStyle = $isSalary ? 'background-color: rgba(245, 158, 11, 0.1); border-left: 4px solid #f59e0b;' : '';
+                    ?>
+                    <tr style="<?php echo $rowStyle; ?>">
+                        <td><?php echo date('d/m/Y', strtotime($exp['expense_date'])); ?></td>
+                        <td><strong><?php echo htmlspecialchars($exp['project_name']); ?></strong></td>
+                        <td>
+                            <?php if ($isSalary): ?>
+                                <span class="status-badge" style="background: #fef3c7; color: #b45309; font-weight: bold;">
+                                    💰 Gaji / Upah
+                                </span>
+                            <?php else: ?>
+                                <span class="status-badge" style="background: #e0e7ff; color: #3730a3;">
+                                    <?php echo htmlspecialchars(ucfirst($exp['category'])); ?>
+                                </span>
+                            <?php endif; ?>
+                        </td>
+                        <td><?php echo htmlspecialchars($exp['description']); ?></td>
+                        <td class="amount" style="text-align: right;">
+                            Rp <?php echo number_format($exp['amount_idr'], 0, ',', '.'); ?>
+                        </td>
+                        <td>
+                            <a href="#" style="color: #ef4444; text-decoration: none;" onclick="if(confirm('Hapus pengeluaran ini?')) location.href='delete-expense.php?id=<?php echo $exp['id']; ?>'; return false;">🗑️</a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
         </div>
     </div>
     </div>
@@ -638,196 +850,208 @@ const totalExpenses = <?php echo $totalExpenses; ?>;
 const investorNames = investorsData.map(i => i.name);
 const investorCapitals = investorsData.map(i => i.total_capital);
 
-const ctx1 = document.getElementById('chartModalMasuk').getContext('2d');
-new Chart(ctx1, {
-    type: 'bar',
-    data: {
-        labels: investorNames,
-        datasets: [{
-            label: 'Dana Modal (Rp)',
-            data: investorCapitals,
-            backgroundColor: [
-                'rgba(102, 126, 234, 0.8)',
-                'rgba(72, 187, 120, 0.8)',
-                'rgba(237, 137, 54, 0.8)'
-            ],
-            borderColor: [
-                'rgba(102, 126, 234, 1)',
-                'rgba(72, 187, 120, 1)',
-                'rgba(237, 137, 54, 1)'
-            ],
-            borderWidth: 2,
-            borderRadius: 8
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: {
-            legend: { display: false }
+const chartModalMasukEl = document.getElementById('chartModalMasuk');
+if (chartModalMasukEl) {
+    const ctx1 = chartModalMasukEl.getContext('2d');
+    new Chart(ctx1, {
+        type: 'bar',
+        data: {
+            labels: investorNames,
+            datasets: [{
+                label: 'Dana Modal (Rp)',
+                data: investorCapitals,
+                backgroundColor: [
+                    'rgba(102, 126, 234, 0.8)',
+                    'rgba(72, 187, 120, 0.8)',
+                    'rgba(237, 137, 54, 0.8)'
+                ],
+                borderColor: [
+                    'rgba(102, 126, 234, 1)',
+                    'rgba(72, 187, 120, 1)',
+                    'rgba(237, 137, 54, 1)'
+                ],
+                borderWidth: 2,
+                borderRadius: 8
+            }]
         },
-        scales: {
-            x: {
-                ticks: {
-                    font: { size: 12, weight: 'bold' },
-                    color: getChartTextColor()
-                }
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { display: false }
             },
-            y: {
-                beginAtZero: true,
-                ticks: {
-                    callback: function(value) {
-                        return 'Rp ' + (value/1000000).toFixed(0) + 'M';
-                    },
-                    font: { size: 11, weight: '600' },
-                    color: getChartTextColor()
+            scales: {
+                x: {
+                    ticks: {
+                        font: { size: 12, weight: 'bold' },
+                        color: getChartTextColor()
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'Rp ' + (value/1000000).toFixed(0) + 'M';
+                        },
+                        font: { size: 11, weight: '600' },
+                        color: getChartTextColor()
+                    }
                 }
             }
         }
-    }
-});
+    });
+}
 
 // Chart 2: Modal vs Pengeluaran (Pie)
-const ctx2 = document.getElementById('chartModalKeluar').getContext('2d');
-new Chart(ctx2, {
-    type: 'doughnut',
-    data: {
-        labels: ['💚 Sisa Dana', '🟠 Pengeluaran'],
-        datasets: [{
-            data: [totalCapital - totalExpenses, totalExpenses],
-            backgroundColor: [
-                'rgba(72, 187, 120, 0.9)',
-                'rgba(237, 137, 54, 0.9)'
-            ],
-            borderColor: [
-                'rgba(72, 187, 120, 1)',
-                'rgba(237, 137, 54, 1)'
-            ],
-            borderWidth: 3
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: {
-            legend: { 
-                position: 'bottom',
-                align: 'center',
-                labels: {
-                    font: {
-                        size: 16,
-                        weight: 'bold',
-                        family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
-                    },
-                    color: getChartTextColor(),
-                    padding: 20,
-                    usePointStyle: true,
-                    pointStyle: 'circle',
-                    boxWidth: 15,
-                    boxHeight: 15
+const chartModalKeluarEl = document.getElementById('chartModalKeluar');
+if (chartModalKeluarEl) {
+    const ctx2 = chartModalKeluarEl.getContext('2d');
+    new Chart(ctx2, {
+        type: 'doughnut',
+        data: {
+            labels: ['💚 Sisa Dana', '🟠 Pengeluaran'],
+            datasets: [{
+                data: [totalCapital - totalExpenses, totalExpenses],
+                backgroundColor: [
+                    'rgba(72, 187, 120, 0.9)',
+                    'rgba(237, 137, 54, 0.9)'
+                ],
+                borderColor: [
+                    'rgba(72, 187, 120, 1)',
+                    'rgba(237, 137, 54, 1)'
+                ],
+                borderWidth: 3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { 
+                    position: 'bottom',
+                    align: 'center',
+                    labels: {
+                        font: {
+                            size: 16,
+                            weight: 'bold',
+                            family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
+                        },
+                        color: getChartTextColor(),
+                        padding: 20,
+                        usePointStyle: true,
+                        pointStyle: 'circle',
+                        boxWidth: 15,
+                        boxHeight: 15
+                    }
                 }
             }
         }
-    }
-});
+    });
+}
 
 // Chart 3: Progres Project
 const projectNames = projectsData.map(p => p.name || p.project_name);
 const projectBudgets = projectsData.map(p => p.budget || p.budget_idr);
 
-const ctx3 = document.getElementById('chartProgresProject').getContext('2d');
-new Chart(ctx3, {
-    type: 'bar',
-    data: {
-        labels: projectNames,
-        datasets: [{
-            label: 'Budget (Rp)',
-            data: projectBudgets,
-            backgroundColor: 'rgba(102, 126, 234, 0.8)',
-            borderColor: 'rgba(102, 126, 234, 1)',
-            borderWidth: 2,
-            borderRadius: 8
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: {
-            legend: { display: false }
+const chartProgresProjectEl = document.getElementById('chartProgresProject');
+if (chartProgresProjectEl) {
+    const ctx3 = chartProgresProjectEl.getContext('2d');
+    new Chart(ctx3, {
+        type: 'bar',
+        data: {
+            labels: projectNames,
+            datasets: [{
+                label: 'Budget (Rp)',
+                data: projectBudgets,
+                backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                borderColor: 'rgba(102, 126, 234, 1)',
+                borderWidth: 2,
+                borderRadius: 8
+            }]
         },
-        scales: {
-            x: {
-                ticks: {
-                    font: { size: 12, weight: 'bold' },
-                    color: getChartTextColor()
-                }
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { display: false }
             },
-            y: {
-                beginAtZero: true,
-                ticks: {
-                    callback: function(value) {
-                        return 'Rp ' + (value/1000000).toFixed(0) + 'M';
-                    },
-                    font: { size: 11, weight: '600' },
-                    color: getChartTextColor()
+            scales: {
+                x: {
+                    ticks: {
+                        font: { size: 12, weight: 'bold' },
+                        color: getChartTextColor()
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'Rp ' + (value/1000000).toFixed(0) + 'M';
+                        },
+                        font: { size: 11, weight: '600' },
+                        color: getChartTextColor()
+                    }
                 }
             }
         }
-    }
-});
+    });
+}
 
 // Chart 4: Detail Pengeluaran
-const ctx4 = document.getElementById('chartDetailPengeluaran').getContext('2d');
-new Chart(ctx4, {
-    type: 'line',
-    data: {
-        labels: projectNames,
-        datasets: [{
-            label: 'Total Pengeluaran (Rp)',
-            data: projectNames.map(() => 0), // Akan diupdate dari DB
-            borderColor: 'rgba(237, 137, 54, 1)',
-            backgroundColor: 'rgba(237, 137, 54, 0.1)',
-            borderWidth: 3,
-            fill: true,
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(237, 137, 54, 1)',
-            pointBorderWidth: 2,
-            pointRadius: 6
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: {
-            legend: { 
-                display: true,
-                position: 'top',
-                labels: {
-                    font: { size: 13, weight: 'bold' },
-                    color: getChartTextColor(),
-                    padding: 15,
-                    usePointStyle: true,
-                    pointStyle: 'circle'
-                }
-            }
+const chartDetailPengeluaranEl = document.getElementById('chartDetailPengeluaran');
+if (chartDetailPengeluaranEl) {
+    const ctx4 = chartDetailPengeluaranEl.getContext('2d');
+    new Chart(ctx4, {
+        type: 'line',
+        data: {
+            labels: projectNames,
+            datasets: [{
+                label: 'Total Pengeluaran (Rp)',
+                data: projectNames.map(() => 0), // Akan diupdate dari DB
+                borderColor: 'rgba(237, 137, 54, 1)',
+                backgroundColor: 'rgba(237, 137, 54, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: 'rgba(237, 137, 54, 1)',
+                pointBorderWidth: 2,
+                pointRadius: 6
+            }]
         },
-        scales: {
-            x: {
-                ticks: {
-                    font: { size: 11, weight: '600' },
-                    color: getChartTextColor()
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { 
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        font: { size: 13, weight: 'bold' },
+                        color: getChartTextColor(),
+                        padding: 15,
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
                 }
             },
-            y: {
-                beginAtZero: true,
-                ticks: {
-                    callback: function(value) {
-                        return 'Rp ' + (value/1000000).toFixed(0) + 'M';
-                    },
-                    font: { size: 11, weight: '600' },
-                    color: getChartTextColor()
+            scales: {
+                x: {
+                    ticks: {
+                        font: { size: 11, weight: '600' },
+                        color: getChartTextColor()
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'Rp ' + (value/1000000).toFixed(0) + 'M';
+                        },
+                        font: { size: 11, weight: '600' },
+                        color: getChartTextColor()
+                    }
                 }
             }
         }
-    }
-});
+    });
+}
 
 // Tab navigation
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -844,6 +1068,22 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         document.getElementById(tabName).classList.add('active');
     });
 });
+
+// Check for tab in URL on load
+const urlParams = new URLSearchParams(window.location.search);
+const activeTab = urlParams.get('tab');
+if (activeTab) {
+    const tabBtn = document.querySelector(`.tab-btn[data-tab="${activeTab}"]`);
+    if (tabBtn) {
+        // Remove default active
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        
+        // Activate requested tab
+        tabBtn.classList.add('active');
+        document.getElementById(activeTab).classList.add('active');
+    }
+}
 
 // Handle Form Submission untuk Input Pengeluaran
 const expenseForm = document.getElementById('expenseForm');

@@ -125,6 +125,20 @@ function createPurchaseOrder($supplier_id, $po_date, $items, $options = []) {
         $auth = new Auth();
         $currentUser = $auth->getCurrentUser();
         $created_by = $currentUser['id'];
+
+        // Fix: Validate created_by user exists (Handle session mismatch)
+        $user_check = $db->fetchOne("SELECT id FROM users WHERE id = ?", [$created_by]);
+        if (!$user_check) {
+             // Try to find by username
+             $user_by_name = $db->fetchOne("SELECT id FROM users WHERE username = ?", [$currentUser['username']]);
+             if ($user_by_name) {
+                 $created_by = $user_by_name['id'];
+             } else {
+                 // Fallback to Admin (ID 1)
+                 $admin = $db->fetchOne("SELECT id FROM users WHERE id = 1 OR role = 'admin' LIMIT 1");
+                 $created_by = $admin ? $admin['id'] : 1; 
+             }
+        }
         
         // Generate PO Number
         $po_number = generatePONumber();
@@ -340,11 +354,15 @@ function getPurchaseOrders($filters = [], $limit = 100, $offset = 0) {
             s.supplier_name,
             s.supplier_code,
             u.full_name as created_by_name,
-            COUNT(pod.id) as items_count
+            COUNT(pod.id) as items_count,
+            cb.id as payment_id,
+            COALESCE(ta.file_path, NULL) as ta_attachment_path
         FROM purchase_orders_header poh
         LEFT JOIN suppliers s ON poh.supplier_id = s.id
         LEFT JOIN users u ON poh.created_by = u.id
         LEFT JOIN purchase_orders_detail pod ON poh.id = pod.po_header_id
+        LEFT JOIN cash_book cb ON cb.reference_no = poh.po_number AND cb.source_type = 'purchase_order'
+        LEFT JOIN transaction_attachments ta ON ta.transaction_type = 'purchase_order' AND ta.transaction_id = poh.id
         {$where_clause}
         GROUP BY poh.id
         ORDER BY poh.po_date DESC, poh.created_at DESC
@@ -379,8 +397,16 @@ function approvePurchaseOrderAndPay($po_id, $approved_by, $options = []) {
         }
         
         $db->getConnection()->beginTransaction();
-        
-        // Handle file upload if provided
+
+        // 1. Fix: Validate approved_by user exists (Handle session mismatch)
+        $user_check = $db->fetchOne("SELECT id FROM users WHERE id = ?", [$approved_by]);
+        if (!$user_check) {
+             // Fallback to Admin (ID 1)
+             $admin = $db->fetchOne("SELECT id FROM users WHERE id = 1 OR role = 'admin' LIMIT 1");
+             $approved_by = $admin ? $admin['id'] : 1;
+        }
+
+        // 2. Handle File Upload (Attachment)
         $attachment_path = null;
         if (isset($options['attachment_file']) && $options['attachment_file']['error'] === UPLOAD_ERR_OK) {
             $upload_dir = __DIR__ . '/../uploads/purchase_attachments/';
@@ -400,8 +426,20 @@ function approvePurchaseOrderAndPay($po_id, $approved_by, $options = []) {
                 }
             }
         }
+
+        // 3. Save Attachment to Separate Table (transaction_attachments)
+        if ($attachment_path) {
+            $db->insert('transaction_attachments', [
+                'transaction_type' => 'purchase_order',
+                'transaction_id' => $po_id,
+                'file_path' => $attachment_path,
+                'file_name' => $new_filename,
+                'file_type' => $file_extension,
+                'uploaded_by' => $approved_by
+            ]);
+        }
         
-        // Update PO status to completed
+        // 4. Update PO Status to Completed
         $update_data = [
             'status' => 'completed',
             'approved_by' => $approved_by,
@@ -409,69 +447,87 @@ function approvePurchaseOrderAndPay($po_id, $approved_by, $options = []) {
         ];
         
         if ($attachment_path) {
-            $update_data['attachment_path'] = $attachment_path;
+             $update_data['attachment_path'] = $attachment_path; // Backward compatibility
         }
         
         $db->update('purchase_orders_header', $update_data, 'id = :id', ['id' => $po_id]);
         
-        // Prepare cash_book entry
-        $payment_date = isset($options['payment_date']) ? $options['payment_date'] : date('Y-m-d');
-        $payment_notes = isset($options['payment_notes']) ? $options['payment_notes'] : 
-                         "Pembayaran PO #{$po['po_number']} - {$po['supplier_name']}";
-        
-        // Get expense category (Pembelian Barang/Jasa)
-        $expense_category = $db->fetchOne("SELECT id FROM categories WHERE category_type = 'expense' LIMIT 1");
-        if (!$expense_category) {
-            // Create default category if not exists
-            try {
-                $category_id = $db->insert('categories', [
-                    'category_name' => 'Pembelian Barang/Jasa',
-                    'category_type' => 'expense',
-                    'description' => 'Pembelian barang dan jasa untuk operasional',
-                    'is_active' => 1
-                ]);
-            } catch (Exception $cat_ex) {
-                throw new Exception("Gagal create kategori: " . $cat_ex->getMessage());
-            }
+        // 5. Create Cash Book Entry (Only if not exists)
+        $existing_payment = $db->fetchOne(
+            "SELECT id FROM cash_book WHERE source_type = 'purchase_order' AND reference_no = ?", 
+            [$po['po_number']]
+        );
+
+        $cash_book_id = 0;
+
+        if ($existing_payment) {
+            // Payment already exists, skip insert
+            $cash_book_id = $existing_payment['id'];
         } else {
-            $category_id = $expense_category['id'];
-        }
-        
-        // Get first division if item division not set
-        $division_id = 1;
-        if (isset($po['items'][0]['division_id']) && $po['items'][0]['division_id'] > 0) {
-            $division_id = $po['items'][0]['division_id'];
-        } else {
-            $first_div = $db->fetchOne("SELECT id FROM divisions LIMIT 1");
-            if ($first_div) {
-                $division_id = $first_div['id'];
-            }
-        }
-        
-        // Post to cash_book (pengeluaran)
-        $cash_book_data = [
-            'transaction_date' => $payment_date,
-            'transaction_time' => date('H:i:s'),
-            'description' => $payment_notes,
-            'amount' => $po['total_amount'],
-            'transaction_type' => 'expense',
-            'payment_method' => 'cash',
-            'category_id' => $category_id,
-            'division_id' => $division_id,
-            'created_by' => $approved_by,
-            'source_type' => 'purchase_order',
-            'source_id' => $po_id,
-            'is_editable' => 0
-        ];
-        
-        try {
-            $cash_book_id = $db->insert('cash_book', $cash_book_data);
+            // Prepare cash_book entry
+            $payment_date = isset($options['payment_date']) ? $options['payment_date'] : date('Y-m-d');
+            $payment_notes = isset($options['payment_notes']) ? $options['payment_notes'] : 
+                            "Pembayaran PO #{$po['po_number']} - {$po['supplier_name']}";
             
-            if (!$cash_book_id) {
-                throw new Exception("Insert returned false");
+            // Get expense category
+            // Prefer explicit Payment category, otherwise default expense
+            $expense_category = $db->fetchOne("SELECT id FROM categories WHERE category_name LIKE '%Payment Supplier%' OR category_name LIKE '%Pembayaran Supplier%' LIMIT 1");
+            
+            if (!$expense_category) {
+                 $expense_category = $db->fetchOne("SELECT id FROM categories WHERE category_type = 'expense' LIMIT 1");
             }
-        } catch (Exception $cb_ex) {
-            throw new Exception("Gagal post ke cash book: " . $cb_ex->getMessage());
+            
+            if (!$expense_category) {
+                // Create default category
+                try {
+                    $category_id = $db->insert('categories', [
+                        'category_name' => 'Pembayaran Supplier',
+                        'category_type' => 'expense',
+                        'description' => 'Pembayaran PO ke Supplier',
+                        'is_active' => 1
+                    ]);
+                } catch (Exception $cat_ex) {
+                    throw new Exception("Gagal create kategori: " . $cat_ex->getMessage());
+                }
+            } else {
+                $category_id = $expense_category['id'];
+            }
+            
+            // Get division
+            $division_id = 1;
+            if (isset($po['items'][0]['division_id']) && $po['items'][0]['division_id'] > 0) {
+                $division_id = $po['items'][0]['division_id'];
+            } else {
+                $first_div = $db->fetchOne("SELECT id FROM divisions LIMIT 1");
+                if ($first_div) {
+                    $division_id = $first_div['id'];
+                }
+            }
+            
+            // Post to cash_book (pengeluaran)
+            $cash_book_data = [
+                'transaction_date' => $payment_date,
+                'transaction_time' => date('H:i:s'),
+                'description' => $payment_notes,
+                'amount' => $po['total_amount'],
+                'transaction_type' => 'expense',
+                'payment_method' => 'cash',
+                'category_id' => $category_id,
+                'division_id' => $division_id,
+                'created_by' => $approved_by,
+                'source_type' => 'purchase_order',
+                'reference_no' => $po['po_number'],
+                'is_editable' => 0
+            ];
+            
+            try {
+                $cash_book_id = $db->insert('cash_book', $cash_book_data);
+                if (!$cash_book_id) {
+                    throw new Exception("Insert returned false");
+                }
+            } catch (Exception $cb_ex) {
+                throw new Exception("Gagal post ke cash book: " . $cb_ex->getMessage());
+            }
         }
         
         $db->getConnection()->commit();

@@ -11,10 +11,17 @@ $auth->requireLogin();
 
 $db = Database::getInstance();
 $currentUser = $auth->getCurrentUser();
+
+// Get Total Real Cash (All Time)
+$allTimeCashResult = $db->fetchOne(
+    "SELECT SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE -amount END) as balance FROM cash_book"
+);
+$totalRealCash = $allTimeCashResult['balance'] ?? 0;
+
 $pageTitle = 'Laporan Harian';
 
 // Get filter parameters
-$start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-m-01');
+$start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-m-d');
 $end_date = isset($_GET['end_date']) ? $_GET['end_date'] : date('Y-m-d');
 $division_id = isset($_GET['division_id']) ? (int)$_GET['division_id'] : 0;
 
@@ -35,6 +42,23 @@ if ($division_id > 0) {
 
 $whereClause = implode(' AND ', $whereConditions);
 
+// Get Opening Balance (All transactions before start_date)
+$openingParams = ['start_date' => $start_date];
+$openingWhere = "transaction_date < :start_date";
+if ($division_id > 0) {
+    $openingWhere .= " AND division_id = :division_id";
+    $openingParams['division_id'] = $division_id;
+}
+
+$openingBalanceResult = $db->fetchOne("
+    SELECT COALESCE(SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE -amount END), 0) as balance
+    FROM cash_book
+    WHERE $openingWhere
+", $openingParams);
+
+$openingBalance = $openingBalanceResult['balance'] ?? 0;
+$runningBalance = $openingBalance;
+
 // Get daily summary
 $dailySummary = $db->fetchAll("
     SELECT 
@@ -47,21 +71,32 @@ $dailySummary = $db->fetchAll("
     FROM cash_book cb
     WHERE $whereClause
     GROUP BY DATE(cb.transaction_date)
-    ORDER BY date DESC
+    ORDER BY date ASC
 ", $params);
 
-// Calculate totals
+// Calculate totals and running balances
 $grandIncome = 0;
 $grandExpense = 0;
 $grandNet = 0;
 $grandTransactions = 0;
 
-foreach ($dailySummary as $day) {
+// Re-index to sort by date ASC properly for running balance
+foreach ($dailySummary as &$day) {
     $grandIncome += $day['total_income'];
     $grandExpense += $day['total_expense'];
     $grandNet += $day['net_balance'];
     $grandTransactions += $day['transaction_count'];
+    
+    // Add running balance to row
+    $runningBalance += $day['net_balance'];
+    $day['closing_balance'] = $runningBalance;
 }
+unset($day);
+
+// If only 1 day is selected, showing "total net" is less useful than "closing balance"
+// We will sort back to DESC for display if needed, but usually reports are ASC or DESC
+// Original query was DESC, let's keep it DESC for the table or just array_reverse
+$dailySummaryDisplay = array_reverse($dailySummary); // Newest first
 
 // ============================================
 // GET DETAIL TRANSACTIONS FOR PRINT
@@ -84,7 +119,7 @@ $incomeDetails = $db->fetchAll("
     ORDER BY cb.transaction_date, cb.transaction_time
 ", $params);
 
-// Get expense details from cash book
+// Get expense details from cash book (Modified to join PO/Supplier and Items)
 $expenseDetails = $db->fetchAll("
     SELECT 
         cb.id,
@@ -94,56 +129,29 @@ $expenseDetails = $db->fetchAll("
         cb.amount,
         d.division_name,
         c.category_name,
-        'cashbook' as source
+        'cashbook' as source,
+        cb.source_type,
+        cb.reference_no,
+        s.supplier_name,
+        poh.po_number,
+        GROUP_CONCAT(CONCAT(pod.item_name, ' (', pod.quantity, ' ', pod.unit_of_measure, ')') SEPARATOR ', ') as po_items
     FROM cash_book cb
     LEFT JOIN divisions d ON cb.division_id = d.id
     LEFT JOIN categories c ON cb.category_id = c.id
+    LEFT JOIN purchase_orders_header poh ON cb.source_type = 'purchase_order' AND cb.reference_no = poh.po_number
+    LEFT JOIN suppliers s ON poh.supplier_id = s.id
+    LEFT JOIN purchase_orders_detail pod ON poh.id = pod.po_header_id
     WHERE $whereClause AND cb.transaction_type = 'expense'
+    GROUP BY cb.id
     ORDER BY cb.transaction_date, cb.transaction_time
 ", $params);
 
-// Get expense details from Purchase Orders (Procurement)
-$purchaseDetails = [];
-try {
-    $poWhereConditions = ["ph.invoice_date BETWEEN :start_date AND :end_date"];
-    $poParams = [
-        'start_date' => $start_date,
-        'end_date' => $end_date
-    ];
-    
-    if ($division_id > 0) {
-        $poWhereConditions[] = "pd.division_id = :division_id";
-        $poParams['division_id'] = $division_id;
-    }
-    
-    $poWhereClause = implode(' AND ', $poWhereConditions);
-    
-    $purchaseDetails = $db->fetchAll("
-        SELECT 
-            ph.invoice_number,
-            ph.invoice_date as transaction_date,
-            '00:00:00' as transaction_time,
-            pd.item_name as description,
-            pd.subtotal as amount,
-            d.division_name,
-            'Pembelian' as category_name,
-            'purchase_order' as source,
-            s.supplier_name,
-            pd.quantity,
-            pd.unit_price
-        FROM purchases_detail pd
-        INNER JOIN purchases_header ph ON pd.invoice_number = ph.invoice_number
-        INNER JOIN divisions d ON pd.division_id = d.id
-        LEFT JOIN suppliers s ON ph.supplier_id = s.supplier_id
-        WHERE $poWhereClause
-        ORDER BY ph.invoice_date, pd.item_name
-    ", $poParams);
-} catch (Exception $e) {
-    // Procurement tables might not exist
-}
+// PO details logic removed/updated as we now use cash_book direct linkage
+$purchaseDetails = []; 
+// If you still have standalone purchases not in cashbook (unlikely now), keep logic, else ignore.
+// We merged everything into expenseDetails above.
 
-// Merge all expenses (from cashbook and PO)
-$allExpenseDetails = array_merge($expenseDetails, $purchaseDetails);
+$allExpenseDetails = $expenseDetails;
 
 // Sort by date and time
 usort($allExpenseDetails, function($a, $b) {
@@ -328,15 +336,15 @@ function closePDFPreview() {
 
 <!-- Filter Section -->
 <div class="card" style="margin-bottom: 1.5rem;">
-        <form method="GET" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 1rem; align-items: end;">
+        <form method="GET" id="filterForm" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 1rem; align-items: end;">
             <div class="form-group" style="margin: 0;">
                 <label class="form-label">Dari Tanggal</label>
-                <input type="date" name="start_date" class="form-control" value="<?php echo $start_date; ?>" required>
+                <input type="date" name="start_date" id="start_date" class="form-control" value="<?php echo $start_date; ?>" required>
             </div>
             
             <div class="form-group" style="margin: 0;">
                 <label class="form-label">Sampai Tanggal</label>
-                <input type="date" name="end_date" class="form-control" value="<?php echo $end_date; ?>" required>
+                <input type="date" name="end_date" id="end_date" class="form-control" value="<?php echo $end_date; ?>" required>
             </div>
             
             <div class="form-group" style="margin: 0;">
@@ -354,11 +362,28 @@ function closePDFPreview() {
             <button type="submit" class="btn btn-primary" style="height: 42px;">
                 <i data-feather="search" style="width: 16px; height: 16px;"></i> Cari
             </button>
+            
+            <button type="button" onclick="setToday()" class="btn btn-info" style="height: 42px; color: white;">
+                <i data-feather="calendar" style="width: 16px; height: 16px;"></i> Hari Ini
+            </button>
         </form>
+        <script>
+        function setToday() {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            const todayStr = `${year}-${month}-${day}`;
+            
+            document.getElementById('start_date').value = todayStr;
+            document.getElementById('end_date').value = todayStr;
+            document.getElementById('filterForm').submit();
+        }
+        </script>
     </div>
 
 <!-- Summary Cards -->
-<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
     <div class="card" style="padding: 1rem;">
         <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Total Pemasukan</div>
         <div style="font-size: 1.5rem; font-weight: 800; color: var(--success);">
@@ -374,10 +399,20 @@ function closePDFPreview() {
     </div>
     
     <div class="card" style="padding: 1rem;">
-        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Net Balance</div>
-        <div style="font-size: 1.5rem; font-weight: 800; color: <?php echo $grandNet >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;">
-            <?php echo formatCurrency($grandNet); ?>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Saldo Akhir</div>
+        <div style="font-size: 1.5rem; font-weight: 800; color: <?php echo $runningBalance >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;">
+            <?php echo formatCurrency($runningBalance); ?>
         </div>
+        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 5px;">(Termasuk Saldo Awal: <?php echo formatCurrency($openingBalance); ?>)</div>
+    </div>
+    
+    <!-- Total Uang Cash (Real Money) -->
+    <div class="card" style="padding: 1rem; border-left: 4px solid #06b6d4;">
+        <div style="font-size: 0.75rem; color: #0891b2; margin-bottom: 0.5rem;">Total Uang Cash</div>
+        <div style="font-size: 1.5rem; font-weight: 800; color: #0891b2;">
+            <?php echo formatCurrency($totalRealCash); ?>
+        </div>
+        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 5px;">(Accumulated Real Balance)</div>
     </div>
     
     <div class="card" style="padding: 1rem;">
@@ -414,18 +449,18 @@ function closePDFPreview() {
     <?php else: ?>
         <div class="table-responsive">
             <table class="table" id="dailyTable">
-                <thead>
+                        <thead>
                     <tr>
                         <th>Tanggal</th>
                         <th>Hari</th>
                         <th class="text-right">Pemasukan</th>
                         <th class="text-right">Pengeluaran</th>
-                        <th class="text-right">Net Balance</th>
+                        <th class="text-right">Saldo Akhir</th>
                         <th class="text-center">Transaksi</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($dailySummary as $day): ?>
+                    <?php foreach ($dailySummaryDisplay as $day): ?>
                         <tr>
                             <td style="font-weight: 600; font-size: 0.813rem;">
                                 <?php echo date('d/m/Y', strtotime($day['date'])); ?>
@@ -442,8 +477,8 @@ function closePDFPreview() {
                             <td class="text-right" style="font-weight: 700; font-size: 0.875rem; color: var(--danger);">
                                 <?php echo formatCurrency($day['total_expense']); ?>
                             </td>
-                            <td class="text-right" style="font-weight: 800; font-size: 0.938rem; color: <?php echo $day['net_balance'] >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;">
-                                <?php echo formatCurrency($day['net_balance']); ?>
+                            <td class="text-right" style="font-weight: 800; font-size: 0.938rem; color: <?php echo $day['closing_balance'] >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;">
+                                <?php echo formatCurrency($day['closing_balance']); ?>
                             </td>
                             <td class="text-center" style="font-size: 0.813rem;">
                                 <span style="padding: 0.25rem 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
@@ -462,8 +497,8 @@ function closePDFPreview() {
                         <td class="text-right" style="color: var(--danger);">
                             <?php echo formatCurrency($grandExpense); ?>
                         </td>
-                        <td class="text-right" style="color: <?php echo $grandNet >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;">
-                            <?php echo formatCurrency($grandNet); ?>
+                        <td class="text-right" style="font-size: 1rem; color: <?php echo $runningBalance >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;">
+                            <?php echo formatCurrency($runningBalance); ?>
                         </td>
                         <td class="text-center">
                             <?php echo number_format($grandTransactions); ?>
@@ -615,10 +650,12 @@ function closePDFPreview() {
                                             <?php endif; ?>
                                             <?php echo $expense['category_name'] ?? 'Lainnya'; ?>
                                         </div>
-                                        <?php if (!empty($expense['description'])): ?>
+                                        <?php if (!empty($expense['description']) || !empty($expense['po_items'])): ?>
                                             <div style="font-size: 0.688rem; color: var(--text-muted); margin-top: 0.125rem;">
                                                 <?php 
-                                                if ($isPO) {
+                                                if ($isPO && !empty($expense['po_items'])) {
+                                                    echo '<span style="color: #4b5563;">' . htmlspecialchars(mb_strimwidth($expense['po_items'], 0, 60, "...")) . '</span>';
+                                                } elseif ($isPO) {
                                                     echo htmlspecialchars(substr($expense['description'], 0, 40));
                                                     if (isset($expense['quantity'])) {
                                                         echo ' <span style="color: var(--text-primary); font-weight: 600;">(' . $expense['quantity'] . ' pcs @ ' . formatCurrency($expense['unit_price']) . ')</span>';
@@ -839,7 +876,7 @@ function closePDFPreview() {
             <?php
             echo generateSummaryCard('💰 TOTAL PEMASUKAN', formatCurrency($grandIncome), '#10b981', '');
             echo generateSummaryCard('💸 TOTAL PENGELUARAN', formatCurrency($grandExpense), '#ef4444', '');
-            echo generateSummaryCard('📊 NET BALANCE', formatCurrency($grandNet), $grandNet >= 0 ? '#3b82f6' : '#f59e0b', '');
+            echo generateSummaryCard('📊 SALDO AKHIR', formatCurrency($runningBalance), $runningBalance >= 0 ? '#3b82f6' : '#ef4444', '');
             echo generateSummaryCard('📈 TOTAL TRANSAKSI', number_format($grandTransactions), '#8b5cf6', '');
             ?>
         </div>
@@ -856,7 +893,7 @@ function closePDFPreview() {
                     <th style="padding: 4px 5px; text-align: left; border-bottom: 1px solid #d1d5db;">Hari</th>
                     <th style="padding: 4px 5px; text-align: right; border-bottom: 1px solid #d1d5db;">Pemasukan</th>
                     <th style="padding: 4px 5px; text-align: right; border-bottom: 1px solid #d1d5db;">Pengeluaran</th>
-                    <th style="padding: 4px 5px; text-align: right; border-bottom: 1px solid #d1d5db;">Net Balance</th>
+                    <th style="padding: 4px 5px; text-align: right; border-bottom: 1px solid #d1d5db;">Saldo Akhir</th>
                     <th style="padding: 4px 5px; text-align: center; border-bottom: 1px solid #d1d5db;">Transaksi</th>
                 </tr>
             </thead>
@@ -866,7 +903,7 @@ function closePDFPreview() {
                 $rowCount = 0;
                 foreach ($dailySummary as $day): 
                     $bgColor = ($rowCount % 2 === 0) ? '#f9fafb' : '#ffffff';
-                    $netColor = ($day['net_balance'] >= 0) ? '#10b981' : '#ef4444';
+                    $closingColor = ($day['closing_balance'] >= 0) ? '#3b82f6' : '#ef4444'; // Use blue for positive balance like screen
                     $rowCount++;
                 ?>
                     <tr style="background: <?php echo $bgColor; ?>;">
@@ -882,8 +919,8 @@ function closePDFPreview() {
                         <td style="padding: 6px 9px; border-bottom: 1px solid #e5e7eb; text-align: right; color: #ef4444; font-weight: 600;">
                             Rp <?php echo number_format($day['total_expense'], 0, ',', '.'); ?>
                         </td>
-                        <td style="padding: 6px 9px; border-bottom: 1px solid #e5e7eb; text-align: right; color: <?php echo $netColor; ?>; font-weight: 700;">
-                            Rp <?php echo number_format($day['net_balance'], 0, ',', '.'); ?>
+                        <td style="padding: 6px 9px; border-bottom: 1px solid #e5e7eb; text-align: right; color: <?php echo $closingColor; ?>; font-weight: 700;">
+                            Rp <?php echo number_format($day['closing_balance'], 0, ',', '.'); ?>
                         </td>
                         <td style="padding: 6px 9px; border-bottom: 1px solid #e5e7eb; text-align: center;">
                             <?php echo $day['transaction_count']; ?>
@@ -994,22 +1031,24 @@ function closePDFPreview() {
                                         </td>
                                         <td style="padding: 4px 5px; border-bottom: 1px solid #fee2e2; font-size: 10px;">
                                             <div style="font-weight: 600;"><?php echo substr($expense['category_name'] ?? 'Lainnya', 0, 12); ?></div>
-                                            <?php if (!empty($expense['description'])): ?>
+                                            <?php if (!empty($expense['description']) || !empty($expense['po_items'])): ?>
                                                 <div style="color: #666; font-size: 8.5px;">
                                                     <?php 
-                                                    if (isset($expense['source']) && $expense['source'] === 'purchase_order') {
-                                                        echo substr($expense['description'], 0, 15);
-                                                        if (isset($expense['quantity'])) {
-                                                            echo ' (' . $expense['quantity'] . 'x)';
-                                                        }
+                                                    // PO Details logic
+                                                    if (isset($expense['source_type']) && $expense['source_type'] == 'purchase_order') {
+                                                         if (!empty($expense['supplier_name'])) {
+                                                            echo 'Splr: ' . substr($expense['supplier_name'], 0, 12) . '<br>';
+                                                         }
+                                                         if (!empty($expense['po_items'])) {
+                                                             echo substr($expense['po_items'], 0, 40);
+                                                         } else {
+                                                             echo substr($expense['description'], 0, 30);
+                                                         }
                                                     } else {
-                                                        echo substr($expense['description'], 0, 20);
+                                                         echo substr($expense['description'], 0, 20);
                                                     }
                                                     ?>
                                                 </div>
-                                            <?php endif; ?>
-                                            <?php if (isset($expense['source']) && $expense['source'] === 'purchase_order' && !empty($expense['supplier_name'])): ?>
-                                                <div style="color: #999; font-size: 8px;">📦 <?php echo substr($expense['supplier_name'], 0, 15); ?></div>
                                             <?php endif; ?>
                                         </td>
                                         <td style="padding: 4px 5px; border-bottom: 1px solid #fee2e2; text-align: right; font-weight: 600; color: #ef4444; font-size: 10px;">

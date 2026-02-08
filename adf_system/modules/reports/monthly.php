@@ -11,18 +11,27 @@ $auth->requireLogin();
 
 $db = Database::getInstance();
 $currentUser = $auth->getCurrentUser();
+
+// Get Total Real Cash (All Time)
+$allTimeCashResult = $db->fetchOne(
+    "SELECT SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE -amount END) as balance FROM cash_book"
+);
+$totalRealCash = $allTimeCashResult['balance'] ?? 0;
+
 $pageTitle = 'Laporan Bulanan';
 
 // Get filter parameters
-$year = isset($_GET['year']) ? (int)$_GET['year'] : date('Y');
+$selectedMonth = isset($_GET['month']) ? $_GET['month'] : date('Y-m');
+$year = date('Y', strtotime($selectedMonth));
+$monthVal = date('m', strtotime($selectedMonth));
 $division_id = isset($_GET['division_id']) ? (int)$_GET['division_id'] : 0;
 
 // Get all divisions for filter
 $divisions = $db->fetchAll("SELECT * FROM divisions ORDER BY division_name");
 
 // Build WHERE clause
-$whereConditions = ["YEAR(cb.transaction_date) = :year"];
-$params = ['year' => $year];
+$whereConditions = ["DATE_FORMAT(cb.transaction_date, '%Y-%m') = :month"];
+$params = ['month' => $selectedMonth];
 
 if ($division_id > 0) {
     $whereConditions[] = "cb.division_id = :division_id";
@@ -31,10 +40,10 @@ if ($division_id > 0) {
 
 $whereClause = implode(' AND ', $whereConditions);
 
-// Get monthly summary
-$monthlySummary = $db->fetchAll("
+// Get Daily Summary for the Month
+$dailySummary = $db->fetchAll("
     SELECT 
-        MONTH(cb.transaction_date) as month,
+        DATE(cb.transaction_date) as date,
         COALESCE(SUM(CASE WHEN cb.transaction_type = 'income' THEN cb.amount ELSE 0 END), 0) as total_income,
         COALESCE(SUM(CASE WHEN cb.transaction_type = 'expense' THEN cb.amount ELSE 0 END), 0) as total_expense,
         COALESCE(SUM(CASE WHEN cb.transaction_type = 'income' THEN cb.amount ELSE 0 END), 0) - 
@@ -42,8 +51,8 @@ $monthlySummary = $db->fetchAll("
         COUNT(*) as transaction_count
     FROM cash_book cb
     WHERE $whereClause
-    GROUP BY MONTH(cb.transaction_date)
-    ORDER BY month
+    GROUP BY DATE(cb.transaction_date)
+    ORDER BY date ASC
 ", $params);
 
 // Calculate totals
@@ -52,31 +61,34 @@ $grandExpense = 0;
 $grandNet = 0;
 $grandTransactions = 0;
 
-foreach ($monthlySummary as $month) {
-    $grandIncome += $month['total_income'];
-    $grandExpense += $month['total_expense'];
-    $grandNet += $month['net_balance'];
-    $grandTransactions += $month['transaction_count'];
+foreach ($dailySummary as $day) {
+    $grandIncome += $day['total_income'];
+    $grandExpense += $day['total_expense'];
+    $grandNet += $day['net_balance'];
+    $grandTransactions += $day['transaction_count'];
 }
 
-// Get company info for print
-$company = getCompanyInfo();
-$dateRangeText = 'Tahun ' . $year;
+// Get Division with Highest Total Income
+$biggestIncome = $db->fetchOne("
+    SELECT d.division_name, SUM(cb.amount) as total_amount
+    FROM cash_book cb
+    JOIN divisions d ON cb.division_id = d.id
+    WHERE $whereClause AND cb.transaction_type = 'income'
+    GROUP BY d.id, d.division_name
+    ORDER BY total_amount DESC
+    LIMIT 1
+", $params);
 
-// Convert logo path to browser-accessible URL
-$displayLogo = $company['invoice_logo'] ?? $company['logo'];
-$absoluteLogo = null;
-if ($displayLogo) {
-    if (strpos($displayLogo, 'http') === 0) {
-        // Already a URL path
-        $absoluteLogo = $displayLogo;
-    } else {
-        // Convert filename to URL path for browser display
-        // Logo filenames are stored in DB, need to build full URL path
-        $logoFilename = basename($displayLogo);
-        $absoluteLogo = BASE_URL . '/uploads/logos/' . $logoFilename;
-    }
-}
+// Get Division with Highest Total Expense
+$biggestExpense = $db->fetchOne("
+    SELECT d.division_name, SUM(cb.amount) as total_amount
+    FROM cash_book cb
+    JOIN divisions d ON cb.division_id = d.id
+    WHERE $whereClause AND cb.transaction_type = 'expense'
+    GROUP BY d.id, d.division_name
+    ORDER BY total_amount DESC
+    LIMIT 1
+", $params);
 
 // Month names in Indonesian
 $monthNames = [
@@ -85,6 +97,12 @@ $monthNames = [
     9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'
 ];
 
+$pageTitle = 'Laporan Bulan ' . $monthNames[(int)$monthVal] . ' ' . $year;
+$dateRangeText = 'Bulan ' . $monthNames[(int)$monthVal] . ' ' . $year;
+
+// Get company info for print
+$company = getCompanyInfo();
+
 include '../../includes/header.php';
 ?>
 
@@ -92,36 +110,30 @@ include '../../includes/header.php';
 <div class="card" style="margin-bottom: 1.5rem;">
     <form method="GET" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 1rem; align-items: end;">
         <div class="form-group" style="margin: 0;">
-            <label class="form-label">Tahun</label>
-                <select name="year" class="form-control" required>
-                    <?php for($y = date('Y'); $y >= date('Y') - 5; $y--): ?>
-                        <option value="<?php echo $y; ?>" <?php echo $year == $y ? 'selected' : ''; ?>>
-                            <?php echo $y; ?>
-                        </option>
-                    <?php endfor; ?>
-                </select>
-            </div>
-            
-            <div class="form-group" style="margin: 0;">
-                <label class="form-label">Divisi</label>
-                <select name="division_id" class="form-control">
-                    <option value="0">-- Semua Divisi --</option>
-                    <?php foreach ($divisions as $div): ?>
-                        <option value="<?php echo $div['id']; ?>" <?php echo $division_id == $div['id'] ? 'selected' : ''; ?>>
-                            <?php echo $div['division_name']; ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            
-            <button type="submit" class="btn btn-primary" style="height: 42px;">
-                <i data-feather="search" style="width: 16px; height: 16px;"></i> Cari
-            </button>
-        </form>
-    </div>
+            <label class="form-label">Bulan & Tahun</label>
+            <input type="month" name="month" class="form-control" value="<?php echo $selectedMonth; ?>" required>
+        </div>
+        
+        <div class="form-group" style="margin: 0;">
+            <label class="form-label">Divisi</label>
+            <select name="division_id" class="form-control">
+                <option value="0">-- Semua Divisi --</option>
+                <?php foreach ($divisions as $div): ?>
+                    <option value="<?php echo $div['id']; ?>" <?php echo $division_id == $div['id'] ? 'selected' : ''; ?>>
+                        <?php echo $div['division_name']; ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        
+        <button type="submit" class="btn btn-primary" style="height: 42px;">
+            <i data-feather="search" style="width: 16px; height: 16px;"></i> Cari
+        </button>
+    </form>
+</div>
 
 <!-- Summary Cards -->
-<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
     <div class="card" style="padding: 1rem;">
         <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Total Pemasukan</div>
         <div style="font-size: 1.5rem; font-weight: 800; color: var(--success);">
@@ -143,6 +155,14 @@ include '../../includes/header.php';
         </div>
     </div>
     
+    <!-- Total Uang Cash (Real Money) -->
+    <div class="card" style="padding: 1rem; border-left: 4px solid #06b6d4;">
+        <div style="font-size: 0.75rem; color: #0891b2; margin-bottom: 0.5rem;">Total Uang Cash</div>
+        <div style="font-size: 1.5rem; font-weight: 800; color: #0891b2;">
+            <?php echo formatCurrency($totalRealCash); ?>
+        </div>
+    </div>
+    
     <div class="card" style="padding: 1rem;">
         <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Total Transaksi</div>
         <div style="font-size: 1.5rem; font-weight: 800; color: var(--primary-color);">
@@ -151,12 +171,53 @@ include '../../includes/header.php';
     </div>
 </div>
 
+<!-- Key Highlights -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+    <!-- Biggest Income Division -->
+    <div class="card" style="padding: 1rem; border-left: 4px solid var(--success);">
+        <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">🏆 Pemasukan Terbesar (Divisi)</h4>
+        <?php if ($biggestIncome): ?>
+            <div style="font-size: 1.25rem; font-weight: 700; color: var(--success); margin-bottom: 0.25rem;">
+                <?php echo formatCurrency($biggestIncome['total_amount']); ?>
+            </div>
+            <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem;">
+                <i data-feather="briefcase" style="width: 16px; height: 16px;"></i>
+                <?php echo htmlspecialchars($biggestIncome['division_name']); ?>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+                Total kontribusi pendapatan bulan ini
+            </div>
+        <?php else: ?>
+            <div style="color: var(--text-muted); font-size: 0.9rem;">- Belum ada data -</div>
+        <?php endif; ?>
+    </div>
+    
+    <!-- Biggest Expense Division -->
+    <div class="card" style="padding: 1rem; border-left: 4px solid var(--danger);">
+        <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">💸 Pengeluaran Terbesar (Divisi)</h4>
+        <?php if ($biggestExpense): ?>
+            <div style="font-size: 1.25rem; font-weight: 700; color: var(--danger); margin-bottom: 0.25rem;">
+                <?php echo formatCurrency($biggestExpense['total_amount']); ?>
+            </div>
+            <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem;">
+                <i data-feather="briefcase" style="width: 16px; height: 16px;"></i>
+                <?php echo htmlspecialchars($biggestExpense['division_name']); ?>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+                Total penggunaan dana bulan ini
+            </div>
+        <?php else: ?>
+            <div style="color: var(--text-muted); font-size: 0.9rem;">- Belum ada data -</div>
+        <?php endif; ?>
+    </div>
+</div>
+
 <!-- Monthly Chart -->
 <div class="card" style="margin-bottom: 1.5rem;">
         <h3 style="font-size: 0.95rem; color: var(--text-primary); font-weight: 600; margin-bottom: 1rem;">
-            📊 Grafik Bulanan <?php echo $year; ?>
+            📊 Grafik Harian (<?php echo $monthNames[(int)$monthVal] . ' ' . $year; ?>)
         </h3>
-        <canvas id="monthlyChart" style="max-height: 300px;"></canvas>
+        <canvas id="monthlyChart" style="max-height: 380px;"></canvas>
     </div>
 
     <!-- Monthly Summary Table -->
@@ -164,7 +225,7 @@ include '../../includes/header.php';
     <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 0 0.5rem 0; border-bottom: 1px solid var(--bg-tertiary); margin-bottom: 1rem;">
             <h3 style="font-size: 0.95rem; color: var(--text-primary); font-weight: 600;">
-                📊 Ringkasan Per Bulan
+                📊 Ringkasan Harian
             </h3>
             <div style="display: flex; gap: 0.5rem;">
                 <button onclick="exportToPDF()" class="btn btn-danger btn-sm">
@@ -179,16 +240,16 @@ include '../../includes/header.php';
             </div>
         </div>
     
-    <?php if (empty($monthlySummary)): ?>
+    <?php if (empty($dailySummary)): ?>
         <p style="text-align: center; padding: 2rem; color: var(--text-muted);">
-            Tidak ada data untuk tahun yang dipilih
+            Tidak ada data untuk periode yang dipilih
         </p>
     <?php else: ?>
         <div class="table-responsive">
             <table class="table" id="monthlyTable">
                 <thead>
                     <tr>
-                        <th>Bulan</th>
+                        <th>Tanggal</th>
                         <th class="text-right">Pemasukan</th>
                         <th class="text-right">Pengeluaran</th>
                         <th class="text-right">Net Balance</th>
@@ -197,27 +258,32 @@ include '../../includes/header.php';
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($monthlySummary as $month): ?>
+                    <?php 
+                    $dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+                    foreach ($dailySummary as $day): 
+                        $dateObj = strtotime($day['date']);
+                    ?>
                         <tr>
                             <td style="font-weight: 600; font-size: 0.813rem;">
-                                <?php echo $monthNames[$month['month']]; ?> <?php echo $year; ?>
+                                <?php echo date('d/m/Y', $dateObj); ?> 
+                                <span style="font-weight:normal; color:#666;">(<?php echo $dayNames[date('w', $dateObj)]; ?>)</span>
                             </td>
                             <td class="text-right" style="font-weight: 700; font-size: 0.875rem; color: var(--success);">
-                                <?php echo formatCurrency($month['total_income']); ?>
+                                <?php echo formatCurrency($day['total_income']); ?>
                             </td>
                             <td class="text-right" style="font-weight: 700; font-size: 0.875rem; color: var(--danger);">
-                                <?php echo formatCurrency($month['total_expense']); ?>
+                                <?php echo formatCurrency($day['total_expense']); ?>
                             </td>
-                            <td class="text-right" style="font-weight: 800; font-size: 0.938rem; color: <?php echo $month['net_balance'] >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;">
-                                <?php echo formatCurrency($month['net_balance']); ?>
+                            <td class="text-right" style="font-weight: 800; font-size: 0.938rem; color: <?php echo $day['net_balance'] >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;">
+                                <?php echo formatCurrency($day['net_balance']); ?>
                             </td>
                             <td class="text-center" style="font-size: 0.813rem;">
                                 <span style="padding: 0.25rem 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
-                                    <?php echo $month['transaction_count']; ?>
+                                    <?php echo $day['transaction_count']; ?>
                                 </span>
                             </td>
                             <td class="text-center">
-                                <a href="daily.php?start_date=<?php echo $year . '-' . sprintf('%02d', $month['month']) . '-01'; ?>&end_date=<?php echo date('Y-m-t', strtotime($year . '-' . $month['month'] . '-01')); ?><?php echo $division_id > 0 ? '&division_id=' . $division_id : ''; ?>" 
+                                <a href="daily.php?start_date=<?php echo $day['date']; ?>&end_date=<?php echo $day['date']; ?><?php echo $division_id > 0 ? '&division_id=' . $division_id : ''; ?>" 
                                    class="btn btn-primary btn-sm">
                                     <i data-feather="eye" style="width: 14px; height: 14px;"></i> Lihat
                                 </a>
@@ -252,37 +318,66 @@ include '../../includes/header.php';
 <script>
     feather.replace();
     
+    <?php
+    // Generate daily data for chart (fill missing days)
+    $daysInMonth = date('t', strtotime($selectedMonth . '-01'));
+    $chartLabels = [];
+    $incomeData = [];
+    $expenseData = [];
+    
+    // Index existing data
+    $indexedData = [];
+    if (!empty($dailySummary)) {
+        foreach ($dailySummary as $day) {
+            $d = (int)date('d', strtotime($day['date']));
+            $indexedData[$d] = $day;
+        }
+    }
+    
+    for ($i = 1; $i <= $daysInMonth; $i++) {
+        $chartLabels[] = (string)$i;
+        $incomeData[] = isset($indexedData[$i]) ? $indexedData[$i]['total_income'] : 0;
+        $expenseData[] = isset($indexedData[$i]) ? $indexedData[$i]['total_expense'] : 0;
+    }
+    ?>
+
     // Prepare chart data
-    const chartLabels = <?php echo json_encode(array_map(function($m) use ($monthNames) { return $monthNames[$m['month']]; }, $monthlySummary)); ?>;
-    const incomeData = <?php echo json_encode(array_column($monthlySummary, 'total_income')); ?>;
-    const expenseData = <?php echo json_encode(array_column($monthlySummary, 'total_expense')); ?>;
+    const chartLabels = <?php echo json_encode($chartLabels); ?>;
+    const incomeData = <?php echo json_encode($incomeData); ?>;
+    const expenseData = <?php echo json_encode($expenseData); ?>;
     
     // Create chart
     const ctx = document.getElementById('monthlyChart').getContext('2d');
     const monthlyChart = new Chart(ctx, {
-        type: 'bar',
+        type: 'line',
         data: {
             labels: chartLabels,
             datasets: [
                 {
                     label: 'Pemasukan',
                     data: incomeData,
-                    backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                    backgroundColor: 'rgba(16, 185, 129, 0.2)',
                     borderColor: 'rgba(16, 185, 129, 1)',
-                    borderWidth: 1
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    fill: true
                 },
                 {
                     label: 'Pengeluaran',
                     data: expenseData,
-                    backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                    backgroundColor: 'rgba(239, 68, 68, 0.2)',
                     borderColor: 'rgba(239, 68, 68, 1)',
-                    borderWidth: 1
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    fill: true
                 }
             ]
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             scales: {
                 y: {
                     beginAtZero: true,
@@ -292,6 +387,10 @@ include '../../includes/header.php';
                         }
                     }
                 }
+            },
+            interaction: {
+                intersect: false,
+                mode: 'index',
             },
             plugins: {
                 legend: {
@@ -576,7 +675,7 @@ include '../../includes/header.php';
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 0.6rem; font-size: 8px;">
             <thead>
                 <tr style="background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%); font-weight: 700;">
-                    <th style="padding: 6px 8px; text-align: left; border-bottom: 1.5px solid #d1d5db;">Bulan</th>
+                    <th style="padding: 6px 8px; text-align: left; border-bottom: 1.5px solid #d1d5db;">Tanggal</th>
                     <th style="padding: 6px 8px; text-align: right; border-bottom: 1.5px solid #d1d5db;">Pemasukan</th>
                     <th style="padding: 6px 8px; text-align: right; border-bottom: 1.5px solid #d1d5db;">Pengeluaran</th>
                     <th style="padding: 6px 8px; text-align: right; border-bottom: 1.5px solid #d1d5db;">Net Balance</th>
@@ -585,28 +684,29 @@ include '../../includes/header.php';
             </thead>
             <tbody>
                 <?php 
-                $monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+                $dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
                 $rowCount = 0;
-                foreach ($monthlySummary as $month): 
+                foreach ($dailySummary as $day): 
                     $bgColor = ($rowCount % 2 === 0) ? '#f9fafb' : '#ffffff';
-                    $netColor = ($month['net_balance'] >= 0) ? '#10b981' : '#ef4444';
+                    $netColor = ($day['net_balance'] >= 0) ? '#10b981' : '#ef4444';
                     $rowCount++;
+                    $dateObj = strtotime($day['date']);
                 ?>
                     <tr style="background: <?php echo $bgColor; ?>;">
                         <td style="padding: 5px 8px; border-bottom: 1px solid #e5e7eb; font-weight: 600;">
-                            <?php echo $monthNames[$month['month']] . ' ' . $year; ?>
+                            <?php echo date('d/m/Y', $dateObj); ?> <span style="font-weight:normal; color:#666;">(<?php echo $dayNames[date('w', $dateObj)]; ?>)</span>
                         </td>
                         <td style="padding: 5px 8px; border-bottom: 1px solid #e5e7eb; text-align: right; color: #10b981; font-weight: 600;">
-                            Rp <?php echo number_format($month['total_income'], 0, ',', '.'); ?>
+                            Rp <?php echo number_format($day['total_income'], 0, ',', '.'); ?>
                         </td>
                         <td style="padding: 5px 8px; border-bottom: 1px solid #e5e7eb; text-align: right; color: #ef4444; font-weight: 600;">
-                            Rp <?php echo number_format($month['total_expense'], 0, ',', '.'); ?>
+                            Rp <?php echo number_format($day['total_expense'], 0, ',', '.'); ?>
                         </td>
                         <td style="padding: 5px 8px; border-bottom: 1px solid #e5e7eb; text-align: right; color: <?php echo $netColor; ?>; font-weight: 700;">
-                            Rp <?php echo number_format($month['net_balance'], 0, ',', '.'); ?>
+                            Rp <?php echo number_format($day['net_balance'], 0, ',', '.'); ?>
                         </td>
                         <td style="padding: 5px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">
-                            <?php echo $month['transaction_count']; ?>
+                            <?php echo $day['transaction_count']; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>

@@ -51,8 +51,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Handle delete
 if ($action === 'delete' && $id > 0) {
     try {
-        $db->delete('divisions', 'id = :id', ['id' => $id]);
-        setFlashMessage('success', 'Divisi berhasil dihapus!');
+        $result = $db->delete('divisions', 'id = :id', ['id' => $id]);
+        if ($result !== false) {
+             setFlashMessage('success', 'Divisi berhasil dihapus!');
+        } else {
+             setFlashMessage('error', 'Gagal menghapus divisi. Kemungkinan masih ada transaksi terkait.');
+        }
         header('Location: divisions.php');
         exit;
     } catch (Exception $e) {

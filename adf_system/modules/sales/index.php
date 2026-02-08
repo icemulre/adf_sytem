@@ -323,10 +323,11 @@ include '../../includes/header.php';
                 <div class="form-group">
                     <label class="form-label">Metode Pembayaran</label>
                     <select name="payment_method" class="form-control" required>
-                        <option value="cash">Cash</option>
-                        <option value="transfer">Transfer Bank</option>
-                        <option value="card">Kartu Kredit/Debit</option>
-                        <option value="ewallet">E-Wallet</option>
+                        <option value="cash">💵 Cash</option>
+                        <option value="transfer">🔄 Transfer Bank</option>
+                        <option value="debit">💳 Kartu Kredit/Debit</option>
+                        <option value="qr">📱 QR Code / E-Wallet</option>
+                        <option value="other">➕ Lainnya</option>
                     </select>
                 </div>
                 

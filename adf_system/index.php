@@ -110,9 +110,17 @@ $yearlyExpenseResult = $db->fetchAll(
 $yearlyExpense = ['total' => $yearlyExpenseResult[0]['total'] ?? 0];
 
 // ============================================
-// CURRENT BALANCE
+// CURRENT BALANCE (YEARLY)
 // ============================================
 $totalBalance = ($yearlyIncome['total'] ?? 0) - ($yearlyExpense['total'] ?? 0);
+
+// ============================================
+// ALL TIME CASH (REAL MONEY)
+// ============================================
+$allTimeCashResult = $db->fetchOne(
+    "SELECT SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE -amount END) as balance FROM cash_book"
+);
+$totalRealCash = $allTimeCashResult['balance'] ?? 0;
 
 // ============================================
 // TOP DIVISIONS (This Month)
@@ -327,7 +335,7 @@ if ($trialStatus) {
         <canvas id="tradingChart"></canvas>
     </div>
     <div style="padding: 1rem; border-top: 1px solid rgba(99, 102, 241, 0.15); background: var(--bg-secondary);">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem;">
             <div style="padding: 0.75rem; background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(16, 185, 129, 0.05)); border-radius: 8px; border-left: 4px solid var(--success);">
                 <div style="font-size: 0.75rem; color: var(--success); font-weight: 600; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em;">Total Pemasukan</div>
                 <div id="totalIncome" style="font-size: 1.5rem; font-weight: 800; color: var(--success);">
@@ -350,6 +358,13 @@ if ($trialStatus) {
                 <div style="font-size: 0.75rem; color: var(--primary-color); font-weight: 600; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em;">Net Balance</div>
                 <div id="netBalance" style="font-size: 1.5rem; font-weight: 800; color: <?php echo ($totalIncome - $totalExpense) >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;">
                     <?php echo formatCurrency($totalIncome - $totalExpense); ?>
+                </div>
+            </div>
+            <!-- Total Uang Cash (Real Money) -->
+            <div style="padding: 0.75rem; background: linear-gradient(135deg, rgba(6, 182, 212, 0.12), rgba(6, 182, 212, 0.05)); border-radius: 8px; border-left: 4px solid #06b6d4;">
+                <div style="font-size: 0.75rem; color: #0891b2; font-weight: 600; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em;">Total Uang Cash</div>
+                <div style="font-size: 1.5rem; font-weight: 800; color: #0891b2;">
+                    <?php echo formatCurrency($totalRealCash); ?>
                 </div>
             </div>
             <div style="padding: 0.75rem; background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(139, 92, 246, 0.05)); border-radius: 8px; border-left: 4px solid var(--primary-color);">

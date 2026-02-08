@@ -13,17 +13,31 @@ $currentUser = $auth->getCurrentUser();
 
 $po_id = isset($_GET['id']) ? (int)$_GET['id'] : (isset($_POST['po_id']) ? (int)$_POST['po_id'] : 0);
 
+// Get PO details first (needed for validation logic)
+$po = getPurchaseOrder($po_id);
+if (!$po) {
+    $_SESSION['error'] = 'Purchase Order tidak ditemukan';
+    header('Location: purchase-orders.php');
+    exit;
+}
+
 // Handle approval with file upload
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve'])) {
-    // Validate file upload
-    if (!isset($_FILES['nota_image']) || $_FILES['nota_image']['error'] !== UPLOAD_ERR_OK) {
+    
+    // Check if payment already exists (Recovery Mode)
+    $payment_exists = $db->fetchOne("SELECT id FROM cash_book WHERE reference_no = ?", [$po['po_number']]);
+    
+    // Validate file upload ONLY if payment doesn't exist yet
+    if (!$payment_exists && (!isset($_FILES['nota_image']) || $_FILES['nota_image']['error'] !== UPLOAD_ERR_OK)) {
         $_SESSION['error'] = '❌ Upload gambar nota wajib dilakukan sebelum approve!';
         header('Location: purchase-orders.php');
         exit;
     }
     
     $options = [];
-    $options['attachment_file'] = $_FILES['nota_image'];
+    if (isset($_FILES['nota_image'])) {
+        $options['attachment_file'] = $_FILES['nota_image'];
+    }
     
     // Approve and post to cash book
     $result = approvePurchaseOrderAndPay($po_id, $currentUser['id'], $options);
@@ -33,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve'])) {
             💰 <strong>Kas Besar berkurang sebesar Rp ' . number_format($result['amount'], 0, ',', '.') . '</strong><br>
             📝 Transaksi tercatat di Buku Kas Besar.<br>
             <a href="../../modules/cashbook/index.php" style="color: #059669; text-decoration: underline; font-weight: 600;">👉 Lihat di Buku Kas</a>';
-        header('Location: purchases.php');
+        header('Location: purchases.php'); // Redirect to Purchases List (Completed)
         exit;
     } else {
         $_SESSION['error'] = '❌ Gagal approve: ' . $result['message'];
@@ -42,14 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve'])) {
     }
 }
 
-$po = getPurchaseOrder($po_id);
-
-if (!$po) {
-    $_SESSION['error'] = 'Purchase Order tidak ditemukan';
-    header('Location: purchase-orders.php');
-    exit;
-}
-
+// $po is already fetched above
+// remove redundant check
 if (!in_array($po['status'], ['submitted', 'approved'])) {
     $_SESSION['error'] = 'PO harus berstatus Submitted untuk diproses';
     header('Location: purchase-orders.php');

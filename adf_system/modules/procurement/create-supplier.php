@@ -33,6 +33,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['error'] = 'Kode supplier sudah digunakan';
         } else {
             try {
+                // Validate created_by user exists
+                $creator_id = $currentUser['id'];
+                $user_check = $db->fetchOne("SELECT id FROM users WHERE id = ?", [$creator_id]);
+                
+                if (!$user_check) {
+                    // Current session ID invalid (maybe user was deleted/recreated)
+                    // Try to find by username
+                    $user_by_name = $db->fetchOne("SELECT id FROM users WHERE username = ?", [$currentUser['username']]);
+                    if ($user_by_name) {
+                        $creator_id = $user_by_name['id'];
+                        // Optional: Update session? Prefer not to mess with auth logic here, just fix the insert.
+                    } else {
+                        // Fallback to Admin (ID 1) or first available active user
+                        $admin = $db->fetchOne("SELECT id FROM users WHERE id = 1 OR role = 'admin' LIMIT 1");
+                        $creator_id = $admin ? $admin['id'] : 1; 
+                    }
+                }
+
                 $data = [
                     'supplier_code' => $supplier_code,
                     'supplier_name' => $supplier_name,
@@ -43,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'tax_number' => $tax_number ?: null,
                     'payment_terms' => $payment_terms,
                     'is_active' => $is_active,
-                    'created_by' => $currentUser['id']
+                    'created_by' => $creator_id
                 ];
                 
                 $id = $db->insert('suppliers', $data);
