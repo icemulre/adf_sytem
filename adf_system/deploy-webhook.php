@@ -2,10 +2,25 @@
 /**
  * GitHub Webhook Deploy Script
  * Trigger automatic git pull when commits pushed to GitHub
+ * Uses .env file for secure credential management
  */
 
-// Security token (ganti dengan token random Anda)
-define('WEBHOOK_TOKEN', 'adf_deploy_2026_secret');
+// Load .env configuration
+$__DIR__ = __DIR__;
+if (file_exists($__DIR__ . '/.env')) {
+    $env_lines = file($__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($env_lines as $line) {
+        if (strpos($line, '#') === 0) continue;
+        list($key, $value) = array_map('trim', explode('=', $line, 2));
+        if (!empty($key) && !empty($value)) {
+            putenv("$key=$value");
+            define(strtoupper($key), $value);
+        }
+    }
+}
+
+// Security token from .env
+define('WEBHOOK_TOKEN', getenv('WEBHOOK_TOKEN') ?: 'adf_deploy_2026_secret');
 
 // Log file
 $logFile = __DIR__ . '/deploy.log';
