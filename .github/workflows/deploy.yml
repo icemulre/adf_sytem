@@ -25,7 +25,7 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           port: ${{ secrets.FTP_PORT }}
           local-dir: ./
-          server-dir: /home/adfb2574/public_html/adf_system/
+          server-dir: /home/adfb2574/public_html/
           dangerous-clean-slate: false
           exclude: |
             **/.git*
