@@ -205,6 +205,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .terminal-effect span {
             color: var(--dev-secondary);
         }
+        
+        /* Eye icon toggle button styling */
+        #togglePassword {
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        #togglePassword:hover {
+            background-color: rgba(111, 66, 193, 0.2);
+        }
     </style>
 </head>
 <body>
