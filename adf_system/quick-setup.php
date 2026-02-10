@@ -154,6 +154,14 @@ try {
     $stmt = $pdo->prepare("INSERT INTO `users` (username, email, password, full_name, phone, role_id, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute(['admin', 'admin@adfsystem.local', $admin_password, 'Administrator', '0000000000', $admin_role_id, 1]);
     
+    // 13b. Insert developer user
+    $dev_role_result = $pdo->query("SELECT id FROM `roles` WHERE role_code = 'developer'");
+    $dev_role = $dev_role_result->fetch(PDO::FETCH_ASSOC);
+    $dev_role_id = $dev_role['id'] ?? 4;
+    $developer_password = password_hash('developer123', PASSWORD_BCRYPT);
+    $stmt = $pdo->prepare("INSERT INTO `users` (username, email, password, full_name, phone, role_id, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->execute(['developer', 'developer@adfsystem.local', $developer_password, 'Developer User', '0000000000', $dev_role_id, 1]);
+    
     // 14. Get admin user ID
     $user_result = $pdo->query("SELECT id FROM `users` WHERE username = 'admin'");
     $admin_user = $user_result->fetch(PDO::FETCH_ASSOC);
@@ -196,8 +204,18 @@ try {
     $result['details'] = [
         'database' => $DB_NAME,
         'tables' => 5,
-        'admin_user' => 'admin',
-        'admin_password' => 'admin123',
+        'users' => [
+            [
+                'username' => 'admin',
+                'password' => 'admin123',
+                'role' => 'Admin'
+            ],
+            [
+                'username' => 'developer',
+                'password' => 'developer123',
+                'role' => 'Developer'
+            ]
+        ],
         'businesses' => 2,
         'permissions' => count($menus)
     ];
