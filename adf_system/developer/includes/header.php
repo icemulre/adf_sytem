@@ -459,6 +459,9 @@
             </a>
             
             <div class="menu-section">Management</div>
+            <a href="index.php?section=user-setup" class="<?php echo isset($_GET['section']) && $_GET['section'] == 'user-setup' ? 'active' : ''; ?>">
+                <i class="bi bi-person-plus"></i>User Setup
+            </a>
             <a href="users.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'users.php' ? 'active' : ''; ?>">
                 <i class="bi bi-people"></i>Users
             </a>
