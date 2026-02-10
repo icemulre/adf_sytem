@@ -761,24 +761,9 @@ require_once __DIR__ . '/includes/header.php';
                 <!-- ============== STEP 2: BUSINESS ASSIGNMENT ============== -->
                 <div class="row">
                     <div class="col-12">
-                        <!-- User Selection -->
-                        <div class="card mb-4" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                            <div class="card-body">
-                                <label class="form-label mb-0" style="color: white; font-weight: 600;">🔤 Select User to Assign Business:</label>
-                                <select class="form-select mt-2" id="selectUserBusiness" onchange="selectUserBusiness(this.value)" style="font-size: 16px;">
-                                    <option value="">-- Pilih User --</option>
-                                    <?php foreach ($users as $usr): ?>
-                                    <option value="<?php echo $usr['id']; ?>" <?php echo $selectedUserId == $usr['id'] ? 'selected' : ''; ?>>
-                                        📌 <?php echo htmlspecialchars($usr['full_name'] . ' (' . $usr['username'] . ')'); ?>
-                                    </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        </div>
-                        
                         <?php if ($selectedUserId && $editUser): ?>
                         <h5 class="mb-3">📦 Assign Businesses for: <strong style="color: #667eea;"><?php echo htmlspecialchars($editUser['full_name']); ?></strong></h5>
-                        <p class="text-muted">Select which businesses this user should have access to:</p>
+                        <p class="text-muted">Check which businesses this user should have access to:</p>
                         
                         <div class="row">
                             <?php if (empty($allBusinesses)): ?>
@@ -804,10 +789,9 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                         <?php else: ?>
                         <div class="alert alert-warning mt-4">
-                            <strong>⚠️ Pilih User Dulu!</strong> Gunakan dropdown di atas untuk memilih user yang ingin diberikan akses bisnis.
+                            <strong>⚠️ Error: User tidak ditemukan!</strong> Kembali ke Step 1 dan klik tombol "Assign" untuk user yang ingin dikonfigurasi.
                         </div>
                         <?php endif; ?>
-                        </div>
                         
                         <hr>
                         <div class="d-flex gap-2">
@@ -825,23 +809,8 @@ require_once __DIR__ . '/includes/header.php';
                 <!-- ============== STEP 3: PERMISSIONS ============== -->
                 <div class="row">
                     <div class="col-12">
-                        <!-- User Selection -->
-                        <div class="card mb-4" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
-                            <div class="card-body">
-                                <label class="form-label mb-0" style="color: white; font-weight: 600;">🔐 Select User to Configure Permissions:</label>
-                                <select class="form-select mt-2" id="selectUserPermissions" onchange="selectUserPermissions(this.value)" style="font-size: 16px;">
-                                    <option value="">-- Pilih User --</option>
-                                    <?php foreach ($users as $usr): ?>
-                                    <option value="<?php echo $usr['id']; ?>" <?php echo $selectedUserId == $usr['id'] ? 'selected' : ''; ?>>
-                                        📌 <?php echo htmlspecialchars($usr['full_name'] . ' (' . $usr['username'] . ')'); ?>
-                                    </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        </div>
-                        
                         <?php if ($selectedUserId && $editUser): ?>
-                        <h5 class="mb-3">🔒 Set Permissions for: <strong style="color: #f5576c;"><?php echo htmlspecialchars($editUser['full_name']); ?></strong></h5>
+                        <h5 class="mb-3">🔒 Set Permissions for: <strong style="color: #667eea;"><?php echo htmlspecialchars($editUser['full_name']); ?></strong></h5>
                         
                         <?php if (empty($userBusinesses)): ?>
                         <p class="text-center py-5 text-muted">User has no businesses assigned. <a href="?section=user-setup&step=business&user_id=<?php echo $selectedUserId; ?>">Assign businesses first</a></p>
@@ -883,7 +852,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                         <?php else: ?>
                         <div class="alert alert-warning mt-4">
-                            <strong>⚠️ Pilih User Dulu!</strong> Gunakan dropdown di atas untuk memilih user yang ingin dikonfigurasi permission-nya.
+                            <strong>⚠️ Error: User tidak ditemukan!</strong> Kembali ke Step 1 dan klik tombol "Assign" untuk user yang ingin dikonfigurasi.
                         </div>
                         <?php endif; ?>
                         
@@ -1206,19 +1175,6 @@ require_once __DIR__ . '/includes/header.php';
         input.type = type;
     }
     
-    // Select user for business assignment (Step 2)
-    function selectUserBusiness(userId) {
-        if (userId) {
-            window.location.href = '?section=user-setup&step=business&user_id=' + userId;
-        }
-    }
-    
-    // Select user for permissions (Step 3)
-    function selectUserPermissions(userId) {
-        if (userId) {
-            window.location.href = '?section=user-setup&step=permissions&user_id=' + userId;
-        }
-    }
     
     // Handle business checkbox changes
     document.querySelectorAll('.business-checkbox').forEach(checkbox => {
